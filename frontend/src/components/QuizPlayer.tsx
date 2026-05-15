@@ -15,9 +15,10 @@ interface QuizPlayerProps {
   OnClose: () => void;
   userId?: string;
   lessonId?: string;
+  onGenerateMore?: () => Promise<void>;
 }
 
-export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerProps) {
+export function QuizPlayer({ questions, OnClose, userId, lessonId, onGenerateMore }: QuizPlayerProps) {
   const [current_idx, set_current_idx] = useState(0);
   const [selected_option, set_selected_option] = useState<number | null>(null);
   const [user_answers, set_user_answers] = useState<(number | null)[]>([]);
@@ -25,6 +26,7 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
   const [is_finished, set_is_finished] = useState(false);
   const [is_reviewing, set_is_reviewing] = useState(false);
   const [is_saving, set_is_saving] = useState(false);
+  const [is_generating_more, set_is_generating_more] = useState(false);
 
   // Safety check to prevent crash when mounted with empty data
   if (!questions || questions.length === 0) {
@@ -174,17 +176,17 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
     }
 
     return (
-      <div className="h-full flex flex-col items-center justify-center pb-12">
+      <div className="h-full overflow-y-auto flex flex-col items-center justify-center py-8 px-4 gap-0">
         <h2 className="text-3xl font-bold text-[var(--color-black)] mb-1">Quiz Completed!</h2>
         <p className="text-[var(--color-gray-500)] mb-6">You've finished the assessment</p>
         
-        <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-10 flex flex-col items-center mb-10 w-full max-w-sm">
+        <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-10 flex flex-col items-center mb-6 w-full max-w-sm">
           <div className="text-6xl font-black text-[#8c8cf3] mb-2">{score}/{questions.length}</div>
           <div className="text-sm font-bold text-[var(--color-gray-400)] uppercase tracking-widest">Your Score</div>
           {is_saving && <div className="text-xs text-[var(--color-gray-400)] mt-2">Saving your score...</div>}
         </div>
 
-        <div className="flex gap-4 w-full max-w-md px-6">
+        <div className="flex gap-4 w-full max-w-md px-6 mb-3">
           <button
             onClick={OnClose}
             className="flex-1 py-4 border-2 border-[var(--color-gray-200)] text-[var(--color-gray-600)] rounded-lg font-bold text-lg hover:bg-[var(--color-gray-50)] transition-all"
@@ -198,6 +200,54 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId }: QuizPlayerP
             Review Answers
           </button>
         </div>
+
+        {/* ปุ่มขอเพิ่มอีก 5 ข้อ */}
+        {onGenerateMore && (
+          <div className="w-full max-w-md px-6">
+            <button
+              onClick={async () => {
+                set_is_generating_more(true);
+                try {
+                  await onGenerateMore();
+                  // Reset states to resume quiz
+                  set_current_idx(prev => prev + 1);
+                  set_selected_option(null);
+                  set_is_finished(false);
+                  set_is_reviewing(false);
+                } finally {
+                  set_is_generating_more(false);
+                }
+              }}
+              disabled={is_generating_more}
+              className={`w-full py-3.5 rounded-lg font-bold text-base transition-all flex items-center justify-center gap-2 border-2 ${
+                is_generating_more
+                  ? "border-[#8c8cf3]/30 text-[#8c8cf3]/50 cursor-not-allowed bg-[#8c8cf3]/5"
+                  : "border-[#8c8cf3]/40 text-[#8c8cf3] hover:bg-[#8c8cf3]/10 active:scale-95"
+              }`}
+            >
+              {is_generating_more ? (
+                <>
+                  <svg className="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round"/>
+                  </svg>
+                  กำลังสร้างข้อเพิ่มเติม...
+                </>
+              ) : (
+                <>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="16"/>
+                    <line x1="8" y1="12" x2="16" y2="12"/>
+                  </svg>
+                  เพิ่มอีก 5 ข้อ
+                </>
+              )}
+            </button>
+            <p className="text-center text-[11px] text-[var(--color-gray-400)] mt-2">
+              ข้อใหม่จะถูกสร้างจากเนื้อหาเดิม และนำมาต่อท้ายชุดนี้
+            </p>
+          </div>
+        )}
       </div>
     );
   }

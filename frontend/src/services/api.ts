@@ -73,13 +73,13 @@ export const apiService = {
     }
   },
 
-  // 2. Quiz Generation (direct to backend - takes 30-60s)
-  async generateQuiz(chapterTitle: string, content?: string) {
+  // 2. Quiz Generation (direct to backend - takes 15-30s for 5q, 30-60s for 10q)
+  async generateQuiz(chapterTitle: string, content?: string, numQuestions: number = 5) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate-quiz`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapterTitle, content })
+        body: JSON.stringify({ chapterTitle, content, numQuestions })
       });
       if (!res.ok) throw new Error('Network response was not ok');
       return await res.json();
@@ -106,12 +106,12 @@ export const apiService = {
   },
   
   // 4. Exam Generation (direct to backend - takes 60-120s)
-  async generateExam(chapters: { title: string; content: string }[], courseSlug?: string, batchIdx: number = 0, numBatches: number = 8) {
+  async generateExam(chapters: { title: string; content: string }[], courseSlug?: string, batchIdx: number = 0, numBatches: number = 8, customInstruction?: string) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate-exam`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapters, courseSlug, batchIdx, numBatches })
+        body: JSON.stringify({ chapters, courseSlug, batchIdx, numBatches, customInstruction })
       });
       if (!res.ok) throw new Error('Network response was not ok');
       return await res.json();

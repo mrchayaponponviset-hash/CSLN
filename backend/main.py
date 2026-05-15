@@ -236,12 +236,14 @@ class ChatRequest(BaseModel):
 class GenerateRequest(BaseModel):
     chapterTitle: str
     content: Optional[str] = None
+    numQuestions: int = 5  # จำนวนข้อที่ต้องการ (5 หรือ 10)
 
 class GenerateExamRequest(BaseModel):
     chapters: List[Dict[str, str]]
     courseSlug: Optional[str] = None
     batchIdx: int = 0
     numBatches: int = 8
+    customInstruction: Optional[str] = None
 
 class PDFSummaryRequest(BaseModel):
     quizScores: Dict[str, Any]
@@ -483,7 +485,9 @@ async def chat_stream(request: ChatRequest):
 async def generate_quiz(request: GenerateRequest):
     try:
         start_time = time.time()
-        print(f"--- กำลังสร้าง QUIZ (Parallel 5+5) สำหรับ: {request.chapterTitle} ---")
+        num_q = request.numQuestions if request.numQuestions in [5, 10] else 5
+        mode = "Single 5" if num_q == 5 else "Parallel 5+5"
+        print(f"--- กำลังสร้าง QUIZ ({mode}) สำหรับ: {request.chapterTitle} ---")
         
         # 1. เตรียม Context
         context = request.content
@@ -517,14 +521,17 @@ Context:
                     if attempt < 1: await asyncio.sleep(1)
             return []
 
-        # 3. รันพร้อมกัน 2 งาน (Parallel)
-        tasks = [fetch_quiz_batch(1), fetch_quiz_batch(2)]
-        results = await asyncio.gather(*tasks)
-        
-        # 4. รวมผลลัพธ์
-        all_questions = []
-        for batch_questions in results:
-            all_questions.extend(batch_questions)
+        # 3. รันตาม numQuestions
+        if num_q == 5:
+            # รัน batch เดียว (เร็วกว่า ~2x)
+            all_questions = await fetch_quiz_batch(1)
+        else:
+            # รัน 2 batches พร้อมกัน (Parallel)
+            tasks = [fetch_quiz_batch(1), fetch_quiz_batch(2)]
+            results = await asyncio.gather(*tasks)
+            all_questions = []
+            for batch_questions in results:
+                all_questions.extend(batch_questions)
             
         print(f"--- QUIZ DONE: {len(all_questions)} questions in {time.time()-start_time:.2f}s ---")
         return {"questions": all_questions}
@@ -644,12 +651,17 @@ async def generate_exam(request: GenerateExamRequest):
         end_idx = start_idx + batch_size
         target_domains = bloom_distribution[start_idx:end_idx]
         
+        # หากมีคำสั่งพิเศษ (customInstruction) จากผู้ใช้ ให้นำมาเพิ่มเป็นกฎพิเศษ
+        custom_rules = ""
+        if request.customInstruction:
+            custom_rules = f"\n\nUSER REQUEST FOR THESE QUESTIONS: {request.customInstruction}\nMake sure to adjust the difficulty, focus, or style of the questions according to this request while still following the general format."
+
         prompt = f"""You are an expert Computer Science examiner.
 Create exactly {batch_size} multiple-choice questions based strictly on the provided context.
 Focus on the topic: {current_chapter_title}.
 CRITICAL RULE 1: You MUST ONLY use the provided Context. DO NOT use any outside knowledge.
 CRITICAL RULE 2: You MUST distribute the questions evenly across the different concepts in the context.
-CRITICAL RULE 3: Every question and option MUST be written in complete grammatical sentences (Subject + Verb + Object) to ensure maximum clarity.
+CRITICAL RULE 3: Every question and option MUST be written in complete grammatical sentences (Subject + Verb + Object) to ensure maximum clarity.{custom_rules}
 
 Each question must strictly follow these assigned cognitive domains from Bloom's Taxonomy in order:
 {", ".join([f"Question {i+1}: {domain}" for i, domain in enumerate(target_domains)])}
@@ -683,12 +695,13 @@ You MUST respond ONLY with a valid JSON object:
 Context:
 {context}"""
 
-        # ตรวจสอบ Cache สำหรับ Exam Batch นี้
-        cache_key = GetCacheKey("exam", current_chapter_title, context + str(batch_idx))
-        cached = GetFromCache(cache_key)
-        if cached:
-            print(f"--- CACHE HIT: Exam Batch {batch_idx} [{current_chapter_title}] ---")
-            return cached
+        # ตรวจสอบ Cache สำหรับ Exam Batch นี้ (ถ้ามี customInstruction ให้ข้าม Cache เพื่อเจนใหม่เสมอ)
+        cache_key = GetCacheKey("exam", current_chapter_title, context + str(batch_idx) + str(request.customInstruction or ""))
+        if not request.customInstruction:
+            cached = GetFromCache(cache_key)
+            if cached:
+                print(f"--- CACHE HIT: Exam Batch {batch_idx} [{current_chapter_title}] ---")
+                return cached
 
         # ใช้ generation_model (temperature=0) เพื่อความเร็ว
         result = await InvokeGeneration([SystemMessage(content=prompt)])
