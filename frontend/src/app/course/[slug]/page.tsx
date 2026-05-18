@@ -715,6 +715,8 @@ export default function CoursePage() {
     correct_answer: number,
     explanation?: string
   }[]>([]);
+  // เก็บ context ของ quiz ที่กำลัง active เพื่อให้ Generate More ใช้ซ้ำได้
+  const quiz_context_ref = React.useRef<{ topic: string; content: string } | null>(null);
 
   // Exam States
   const [is_generating_exam, set_is_generating_exam] = useState(false);
@@ -724,6 +726,12 @@ export default function CoursePage() {
   const [exam_questions, set_exam_questions] = useState<any[]>([]);
   const [current_exam_batch, set_current_exam_batch] = useState(0);
   const [total_exam_batches] = useState(8);
+  const exam_context_ref = React.useRef<{ title: string; content: string }[]>([]);
+  const exam_batch_idx_ref = React.useRef<number>(0);
+  
+  // Custom Prompt Modal State (For Generate More Exam)
+  const [show_exam_prompt_modal, set_show_exam_prompt_modal] = useState(false);
+  const [exam_custom_instruction, set_exam_custom_instruction] = useState("");
 
   useEffect(() => {
     const current_slug = Array.isArray(slug) ? slug[0] : slug;
@@ -915,8 +923,12 @@ export default function CoursePage() {
     // ตัด content ที่ยาวเกินเพื่อลด Token
     lesson_content = TrimContent(lesson_content);
 
+    // บันทึก context ไว้ใช้กรณี Generate More
+    quiz_context_ref.current = { topic: topic_name, content: lesson_content };
+
     try {
-      const data = await apiService.generateQuiz(topic_name, lesson_content);
+      // เจน 5 ข้อแรกก่อน (numQuestions=5)
+      const data = await apiService.generateQuiz(topic_name, lesson_content, 5);
       
       const mappedQuestions = data.questions.map((q: any) => ({
         question: q.question,
@@ -943,13 +955,32 @@ export default function CoursePage() {
     }
   };
 
+  // --- Generate เพิ่มอีก 5 ข้อ (ต่อท้ายชุดเดิม) ---
+  const HandleGenerateMoreQuiz = async () => {
+    const ctx = quiz_context_ref.current;
+    if (!ctx) return;
+    try {
+      const data = await apiService.generateQuiz(ctx.topic, ctx.content, 5);
+      const newQuestions = data.questions.map((q: any) => ({
+        question: q.question,
+        options: q.options,
+        correct_answer: q.correctIndex,
+        explanation: q.explanation
+      }));
+      // Append ข้อใหม่เข้า state เดิม
+      set_quiz_questions(prev => [...prev, ...newQuestions]);
+    } catch (error) {
+      console.error("Failed to generate more quiz questions:", error);
+      alert("เกิดข้อผิดพลาดในการสร้างข้อเพิ่มเติม");
+      throw error; // ส่งต่อเพื่อให้ QuizPlayer รู้ว่า failed
+    }
+  };
+
   const HandleGenerateExam = async () => {
     set_is_generating_exam(true);
     set_exam_progress(0);
     set_current_exam_batch(0);
-    set_exam_loading_step("กำลังวิเคราะห์โครงสร้างเนื้อหาเพื่อออกแบบข้อสอบ...");
-    
-    const collected_questions: any[] = [];
+    set_exam_loading_step("กำลังเตรียมเนื้อหาข้อสอบ...");
     
     try {
       const examChapters = course.topics.map((topic: string) => {
@@ -972,73 +1003,67 @@ export default function CoursePage() {
         };
       });
 
-      // --- Parallel Exam: ยิง API เป็นกลุ่ม 2 Batch พร้อมกัน ---
-      // (free model มี rate limit จึงไม่ยิงทีเดียวทั้งหมด)
-      const CONCURRENT_BATCHES = 2;
-      for (let i = 0; i < total_exam_batches; i += CONCURRENT_BATCHES) {
-        // สร้าง batch indices สำหรับกลุ่มนี้
-        const group_indices = Array.from(
-          { length: Math.min(CONCURRENT_BATCHES, total_exam_batches - i) },
-          (_, offset) => i + offset
-        );
+      // Save context
+      exam_context_ref.current = examChapters;
+      exam_batch_idx_ref.current = 0;
 
-        // อัปเดต UI ให้แสดงบทที่กำลังทำ
-        const current_topic = course.topics[i % course.topics.length];
-        set_current_exam_batch(i + 1);
-        set_exam_loading_step(`กำลังประมวลผลเนื้อหา: "${current_topic}"...`);
-        set_exam_progress(Math.floor((i / total_exam_batches) * 90));
+      set_exam_loading_step(`กำลังประมวลผลคำถามชุดแรก...`);
+      set_exam_progress(50);
 
-        // ยิง API พร้อมกันในกลุ่มนี้
-        const group_results = await Promise.allSettled(
-          group_indices.map(batch_i =>
-            apiService.generateExam(examChapters, slug, batch_i, total_exam_batches)
-          )
-        );
+      // Fetch only 1 batch (5 questions) initially
+      const data = await apiService.generateExam(examChapters, slug, 0, total_exam_batches, "");
 
-        group_results.forEach(result => {
-          if (result.status === 'fulfilled' && result.value?.questions) {
-            const mappedBatch = result.value.questions.map((q: any) => ({
-              question: q.question,
-              options: q.options,
-              correct_answer: q.correctIndex,
-              domain: q.domain,
-              chapterTitle: q.chapterTitle,
-              explanation: q.explanation
-            }));
-            collected_questions.push(...mappedBatch);
-          } else if (result.status === 'rejected') {
-            console.warn(`Exam batch failed:`, result.reason);
-          }
-        });
-
-        // หน่วงเวลาเล็กน้อยระหว่างกลุ่มเพื่อป้องกัน Rate Limit ของ Free Model
-        if (i + CONCURRENT_BATCHES < total_exam_batches) {
-          await new Promise(resolve => setTimeout(resolve, 800));
-        }
+      if (data && data.questions) {
+        const mappedBatch = data.questions.map((q: any) => ({
+          question: q.question,
+          options: q.options,
+          correct_answer: q.correctIndex,
+          domain: q.domain,
+          chapterTitle: q.chapterTitle,
+          explanation: q.explanation
+        }));
+        set_exam_questions(mappedBatch);
+        set_exam_progress(100);
+        set_is_viewing_exam(true);
+      } else {
+        throw new Error("No questions returned");
       }
-
-      // ขั้นตอนสุดท้ายหลังประมวลผล AI เสร็จสิ้น
-      set_exam_loading_step("กำลังจัดเรียงและสุ่มชุดข้อสอบ...");
-      set_exam_progress(95);
-
-      const shuffled = [...collected_questions].sort(() => Math.random() - 0.5);
-      
-      // หน่วงเวลาเล็กน้อยเพื่อให้ผู้ใช้เห็นสถานะสุดท้าย
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      set_exam_progress(100);
-      set_exam_questions(shuffled);
-      set_is_viewing_exam(true);
 
     } catch (error) {
       console.error("Failed to generate exam:", error);
       alert("เกิดข้อผิดพลาดในการสร้างข้อสอบจำลอง");
     } finally {
-      // ปิดสถานะการโหลด
       setTimeout(() => {
         set_is_generating_exam(false);
         set_exam_loading_step("");
       }, 500);
+    }
+  };
+
+  const HandleGenerateMoreExam = async (instruction: string = "") => {
+    const chapters = exam_context_ref.current;
+    if (!chapters || chapters.length === 0) return;
+    
+    const nextBatchIdx = exam_batch_idx_ref.current + 1;
+    
+    try {
+      const data = await apiService.generateExam(chapters, slug, nextBatchIdx, total_exam_batches, instruction);
+      if (data && data.questions) {
+        const mappedBatch = data.questions.map((q: any) => ({
+          question: q.question,
+          options: q.options,
+          correct_answer: q.correctIndex,
+          domain: q.domain,
+          chapterTitle: q.chapterTitle,
+          explanation: q.explanation
+        }));
+        set_exam_questions(prev => [...prev, ...mappedBatch]);
+        exam_batch_idx_ref.current = nextBatchIdx;
+      }
+    } catch (error) {
+      console.error("Failed to generate more exam questions:", error);
+      alert("เกิดข้อผิดพลาดในการสร้างข้อสอบเพิ่มเติม");
+      throw error;
     }
   };
 
@@ -1156,6 +1181,7 @@ export default function CoursePage() {
                         }}
                         userId={user?.uid}
                         lessonId={lessons.find(l => cleanString(l.chapter_title || l.title) === cleanString(selected_topics[0]))?.id}
+                        onGenerateMore={HandleGenerateMoreQuiz}
                       />
                     </div>
                     <div className={!is_generating_quiz && !is_viewing_quiz ? "block h-full" : "hidden"}>
@@ -1193,6 +1219,7 @@ export default function CoursePage() {
                         courseName={course.name_en}
                         userId={user?.uid}
                         OnClose={() => set_is_viewing_exam(false)} 
+                        onGenerateMore={HandleGenerateMoreExam}
                       />
                     </div>
                     <div className={!is_generating_exam && !is_viewing_exam ? "block h-full relative" : "hidden"}>
