@@ -326,7 +326,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 relative overflow-hidden bg-black/5">
+      <div className={`flex-1 relative overflow-hidden ${has_sent_message ? 'bg-black/5' : 'bg-transparent'}`}>
         {/* กล่องสีม่วงทับลูกศร Scrollbar */}
         <div className="absolute top-0 right-0 w-[14px] h-[12px] bg-[#8c8cf3] z-10 pointer-events-none" />
         <div className="absolute bottom-0 right-0 w-[14px] h-[12px] bg-[#8c8cf3] z-10 pointer-events-none" />
@@ -434,20 +434,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
                 />
               </div>
               
-              {/* Quick Prompt Chips (แสดงในหน้า Greeting เลย) */}
-              {!isLoading && (
-                <div className="flex flex-wrap justify-center gap-2.5 mt-10 animate-fade-in" style={{ animationDelay: '0.8s' }}>
-                  {QUICK_PROMPTS.map((item, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => HandleQuickPrompt(item.prompt)}
-                      className="text-[11px] font-extrabold text-white/40 hover:text-white bg-white/[0.02] hover:bg-white/[0.1] border border-white/5 hover:border-white/20 rounded-full px-5 py-2.5 transition-all duration-300 uppercase tracking-widest shadow-sm"
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {/* Quick Prompt Chips (ย้ายไปจัดวางใต้ฟอร์มกรอกข้อความใน Input Area แล้ว) */}
             </div>
           </div>
         )}
@@ -455,48 +442,84 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
 
       {/* Quick Prompt Chips (ย้ายไปรวมใน Greeting แล้ว) */}
 
-      {/* Input Area */}
-      <div className={`px-6 pb-10 ${has_sent_message || isLoading ? 'pt-3 border-t border-white/10' : 'pt-2'} shrink-0 bg-transparent transition-all duration-700 ease-in-out ${!has_sent_message ? '-translate-y-40' : 'translate-y-0'}`}>
-        <form 
-          onSubmit={HandleSendMessage}
-          className={`flex items-end gap-2 bg-[var(--color-gray-50)] border border-[var(--color-gray-300)] focus-within:border-[var(--color-primary)] focus-within:bg-white rounded-[24px] p-1.5 transition-all duration-500 ${!has_sent_message ? 'max-w-md mx-auto scale-110' : ''}`}
-        >
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                HandleSendMessage(e);
-              }
-            }}
-            placeholder="ถามโจทย์ หรือให้อธิบายเนื้อหา..."
-            className="flex-1 max-h-48 min-h-[44px] bg-transparent border-none outline-none focus:outline-none focus:ring-0 resize-none px-4 py-3 text-[14px] leading-relaxed text-[var(--color-black)] placeholder:text-[var(--color-gray-400)] no-scrollbar"
-            rows={1}
-          />
-          
-          <div className="flex items-center pr-1 pb-0.5">
-            <button 
-              type={isLoading ? "button" : "submit"}
-              onClick={isLoading ? HandleStopGeneration : undefined}
-              disabled={!input.trim() && !isLoading}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
-                (input.trim() || isLoading)
-                ? 'bg-[var(--color-primary)] text-white hover:scale-105 shadow-sm' 
-                : 'bg-transparent text-[var(--color-gray-300)]'
-              }`}
+      {/* Input Area - ยกระดับขึ้น 70px ให้พอดีสมมาตรลอยพ้นขอบล่าง 100% โดยไม่สูงเกินไป (Symmetrical 70px) และสไลด์ลงล่างเมื่อส่งข้อความ */}
+      {/* ขั้นตอนการปรับปรุงแอนิเมชั่น: เอาเส้นขอบด้านบนและ pt-3 ออกเพื่อแก้ปัญหา "เส้นดำๆ" ที่เกิดจากการแปลงสีและเลย์เอาต์ */}
+      {/* เพิ่มเติมระดับพรีเมียม: ใช้ cubic-bezier(0.16, 1, 0.3, 1) (Ease Out Expo) และ will-change เพื่อเร่งประสิทธิภาพของ GPU ให้แอนิเมชั่นสไลด์ลื่นไหล 100% ไร้รอยต่อ */}
+      {/* ปรับระยะขอบแนวตั้งจาก pb-6 pt-2 เป็น py-4 เพื่อให้กล่องข้อความจัดวางอยู่กึ่งกลางแนวตั้งของแถบด้านล่างอย่างสมมาตรเมื่อแชทเลื่อนลงมา */}
+      <div 
+        className="py-4 shrink-0 bg-transparent"
+        style={{
+          transform: !has_sent_message && !isLoading ? 'translateY(-70px)' : 'translateY(0)',
+          transition: 'transform 800ms cubic-bezier(0.16, 1, 0.3, 1)',
+          willChange: 'transform'
+        }}
+      >
+        <div className="w-full flex flex-col items-center">
+          {/* กล่องข้อความกรอกคำถาม - ปรับลดความกว้างสูงสุดให้เท่ากับความกว้างของกลุ่มชุดคำแนะนำด้านล่าง (Pixel-Perfect max-w-[480px]) */}
+          <div className="w-full max-w-[480px] px-6 mx-auto">
+            {/* ปรับปรุงแอนิเมชั่นระดับพรีเมียม: เพิ่มเอฟเฟกต์เรืองแสง (Focus Glow Effect) สีม่วงนุ่มนวลรอบกล่องข้อความเมื่อมีการโฟกัสพิมพ์คำถาม */}
+            <form 
+              onSubmit={HandleSendMessage}
+              className={`flex items-end gap-2 bg-[var(--color-gray-50)] border border-[var(--color-gray-300)] focus-within:border-[var(--color-primary)] focus-within:bg-white focus-within:shadow-[0_0_25px_rgba(177,178,255,0.45)] rounded-[24px] p-1.5 transition-all duration-500 w-full ${!has_sent_message ? 'scale-105' : ''}`}
             >
-              {isLoading ? (
-                <div className="w-4 h-4 bg-white rounded-sm animate-pulse" title="Stop generation" />
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={input.trim() ? "mr-0.5 mt-0.5" : ""}>
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-              )}
-            </button>
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    HandleSendMessage(e);
+                  }
+                }}
+                placeholder="ถามโจทย์ หรือให้อธิบายเนื้อหา..."
+                className="flex-1 max-h-48 min-h-[44px] bg-transparent border-none outline-none focus:outline-none focus:ring-0 resize-none px-4 py-3 text-[14px] leading-relaxed text-[var(--color-black)] placeholder:text-[var(--color-gray-400)] no-scrollbar"
+                rows={1}
+              />
+              
+              <div className="flex items-center pr-1 pb-0.5">
+                <button 
+                  type={isLoading ? "button" : "submit"}
+                  onClick={isLoading ? HandleStopGeneration : undefined}
+                  disabled={!input.trim() && !isLoading}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
+                    (input.trim() || isLoading)
+                    ? 'bg-[var(--color-primary)] text-white hover:scale-105 shadow-sm' 
+                    : 'bg-transparent text-[var(--color-gray-300)]'
+                  }`}
+                >
+                  {isLoading ? (
+                    <div className="w-4 h-4 bg-white rounded-sm animate-pulse" title="Stop generation" />
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={input.trim() ? "mr-0.5 mt-0.5" : ""}>
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
-        </form>
+
+          {/* ปรับปรุงชุดคำแนะนำ (Quick Prompt Chips) ด้านล่างช่องกรอกข้อความ:
+              1. ปรับขนาดความกว้างสูงสุดของคอนเทนเนอร์ให้เท่ากับช่องกรอกที่ max-w-[480px] เพื่อความสมมาตร 100%
+              2. ลด Padding ของปุ่มเป็น px-3 py-1.5 เพื่อให้ชุดปุ่มทั้งหมดเรียงตัวเป็นแถวเดียวพอดีในกรอบ 480px อย่างสวยงาม
+              3. ปรับการจัดระยะห่างตัวอักษรภาษาไทยจาก tracking-widest เป็น tracking-wide เพื่อความสวยงามพรีเมียม
+              4. ปรับเปลี่ยนชื่อตัวแปรในการวนลูปให้อยู่ในรูปแบบ snake_case ตามมาตรฐานของระบบอย่างเคร่งครัด */}
+          {!isLoading && !has_sent_message && (
+            <div className="w-full max-w-[480px] overflow-x-auto no-scrollbar flex flex-nowrap justify-start sm:justify-center gap-1.5 mt-4 px-6 py-3 animate-fade-in mx-auto" style={{ animationDelay: '0.4s' }}>
+              {QUICK_PROMPTS.map((quick_prompt_item, prompt_idx) => (
+                <button
+                  key={prompt_idx}
+                  type="button"
+                  onClick={() => HandleQuickPrompt(quick_prompt_item.prompt)}
+                  className="text-[11px] font-extrabold text-white/50 hover:text-white bg-white/[0.04] hover:bg-white/[0.12] border border-white/5 hover:border-white/20 rounded-full px-3 py-1.5 transition-all duration-300 uppercase tracking-wide shadow-sm active:scale-95 shrink-0 whitespace-nowrap"
+                >
+                  {quick_prompt_item.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -162,9 +162,10 @@ export function AIChatPanel() {
 
         {/* Input Area Area */}
         <div className="pb-10 pt-6 px-6 border-t border-white/10 shrink-0 bg-transparent">
+          {/* ปรับปรุงแอนิเมชั่นระดับพรีเมียม: เพิ่มเอฟเฟกต์เรืองแสง (Focus Glow Effect) สำหรับ Chat Panel ใน Dark Mode */}
           <form 
             onSubmit={handleSendMessage}
-            className="flex items-end gap-3 bg-white/5 border border-white/20 rounded-xl p-2 focus-within:border-[var(--color-primary)] focus-within:bg-white/10 transition-all relative"
+            className="flex items-end gap-3 bg-white/5 border border-white/20 rounded-xl p-2 focus-within:border-[var(--color-primary)] focus-within:bg-white/10 focus-within:shadow-[0_0_20px_rgba(177,178,255,0.3)] transition-all relative"
           >
             <textarea
               value={input}

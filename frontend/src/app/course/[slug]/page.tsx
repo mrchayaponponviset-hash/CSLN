@@ -729,6 +729,9 @@ export default function CoursePage() {
   const exam_context_ref = React.useRef<{ title: string; content: string }[]>([]);
   const exam_batch_idx_ref = React.useRef<number>(0);
   
+  // สำหรับการทดสอบและทำ Mockup หน้าผลสอบโดยตรง
+  const [is_mock_result, set_is_mock_result] = useState(false);
+  
   // Custom Prompt Modal State (For Generate More Exam)
   const [show_exam_prompt_modal, set_show_exam_prompt_modal] = useState(false);
   const [exam_custom_instruction, set_exam_custom_instruction] = useState("");
@@ -980,7 +983,12 @@ export default function CoursePage() {
     set_is_generating_exam(true);
     set_exam_progress(0);
     set_current_exam_batch(0);
-    set_exam_loading_step("กำลังเตรียมเนื้อหาข้อสอบ...");
+    
+    // ===== Phase 1: เตรียมข้อมูลบทเรียน (0% → 10%) =====
+    set_exam_loading_step("กำลังรวบรวมเนื้อหาจากบทเรียนทั้งหมด...");
+    set_exam_progress(2);
+    
+    let progress_interval: any = null;
     
     try {
       const examChapters = course.topics.map((topic: string) => {
@@ -1003,17 +1011,72 @@ export default function CoursePage() {
         };
       });
 
-      // Save context
+      // บันทึก context สำหรับ Generate More ในอนาคต
       exam_context_ref.current = examChapters;
       exam_batch_idx_ref.current = 0;
 
-      set_exam_loading_step(`กำลังประมวลผลคำถามชุดแรก...`);
-      set_exam_progress(50);
+      // ระบุชื่อบทจริงที่ Backend จะนำไปประมวลผล (batchIdx=0 → บทแรก)
+      const target_chapter_name = course.topics[0 % course.topics.length];
+      
+      set_exam_progress(8);
+      set_exam_loading_step(`เตรียมเนื้อหา ${examChapters.length} บทเรียนเสร็จแล้ว`);
+      
+      // หน่วงเล็กน้อยเพื่อให้ผู้ใช้เห็นข้อความ Phase 1 ก่อนเข้า Phase 2
+      await new Promise(r => setTimeout(r, 600));
 
-      // Fetch only 1 batch (5 questions) initially
+      // ===== Phase 2: ส่งข้อมูลไป AI และรอผลลัพธ์ (10% → 85%) =====
+      set_exam_progress(10);
+      set_exam_loading_step(`กำลังส่งข้อมูลบท "${target_chapter_name}" ไปยัง AI...`);
+
+      // Progress เลื่อนขึ้นอย่างสม่ำเสมอตามเวลาจริง (ไม่สุ่ม)
+      // ทุก 1 วินาที เพิ่ม ~2.5% → ครอบคลุม ~30 วินาทีจาก 10% ถึง 85%
+      const PHASE2_START = 10;
+      const PHASE2_END = 85;
+      const TICK_MS = 1000;
+      const phase2_start_time = Date.now();
+      const ESTIMATED_DURATION_MS = 30000; // ประมาณ 30 วินาทีสำหรับการเจน 5 ข้อ
+      
+      // ขั้นตอนย่อยที่แสดงตามลำดับเวลาจริง (ไม่สุ่ม)
+      const phase2_steps = [
+        { at: 0.05, text: `กำลังวิเคราะห์เนื้อหาบท "${target_chapter_name}"...` },
+        { at: 0.20, text: `กำลังออกแบบคำถาม 5 ข้อ ตาม Bloom's Taxonomy...` },
+        { at: 0.40, text: `กำลังสร้างตัวเลือกและกำหนดคำตอบที่ถูกต้อง...` },
+        { at: 0.60, text: `กำลังเขียนคำอธิบายเฉลยสำหรับแต่ละข้อ...` },
+        { at: 0.80, text: `กำลังตรวจสอบคุณภาพและความถูกต้อง...` },
+      ];
+      let last_step_shown = -1;
+
+      progress_interval = setInterval(() => {
+        const elapsed = Date.now() - phase2_start_time;
+        // คำนวณ % ที่ควรจะเป็นตามเวลาที่ผ่านไป (สูงสุดไม่เกิน PHASE2_END)
+        const ratio = Math.min(elapsed / ESTIMATED_DURATION_MS, 1);
+        // ใช้ ease-out curve เพื่อให้ช่วงแรกเร็ว ช่วงหลังช้าลง (สมจริง)
+        const eased = 1 - Math.pow(1 - ratio, 2);
+        const target_progress = PHASE2_START + (PHASE2_END - PHASE2_START) * eased;
+        
+        set_exam_progress(prev => Math.max(prev, Math.min(target_progress, PHASE2_END)));
+
+        // อัปเดตข้อความตามลำดับเวลาจริง (ไม่สุ่ม)
+        for (let i = phase2_steps.length - 1; i >= 0; i--) {
+          if (ratio >= phase2_steps[i].at && i > last_step_shown) {
+            set_exam_loading_step(phase2_steps[i].text);
+            last_step_shown = i;
+            break;
+          }
+        }
+      }, TICK_MS);
+
+      // เรียก API จริง — รอจนกว่าจะเสร็จ
       const data = await apiService.generateExam(examChapters, slug, 0, total_exam_batches, "");
 
+      // หยุด progress interval ทันที
+      if (progress_interval) { clearInterval(progress_interval); progress_interval = null; }
+
       if (data && data.questions) {
+        // ===== Phase 3: ตรวจสอบและแมปผลลัพธ์ (85% → 100%) =====
+        set_exam_progress(88);
+        set_exam_loading_step(`ได้รับข้อสอบ ${data.questions.length} ข้อ กำลังจัดรูปแบบ...`);
+        
         const mappedBatch = data.questions.map((q: any) => ({
           question: q.question,
           options: q.options,
@@ -1022,8 +1085,15 @@ export default function CoursePage() {
           chapterTitle: q.chapterTitle,
           explanation: q.explanation
         }));
-        set_exam_questions(mappedBatch);
+
+        set_exam_progress(95);
+        set_exam_loading_step("จัดเตรียมข้อสอบเสร็จสมบูรณ์!");
+        
+        // หน่วงสั้นๆ เพื่อให้ผู้ใช้เห็น 100% ก่อนเปลี่ยนหน้า
+        await new Promise(r => setTimeout(r, 400));
+        
         set_exam_progress(100);
+        set_exam_questions(mappedBatch);
         set_is_viewing_exam(true);
       } else {
         throw new Error("No questions returned");
@@ -1033,6 +1103,7 @@ export default function CoursePage() {
       console.error("Failed to generate exam:", error);
       alert("เกิดข้อผิดพลาดในการสร้างข้อสอบจำลอง");
     } finally {
+      if (progress_interval) clearInterval(progress_interval);
       setTimeout(() => {
         set_is_generating_exam(false);
         set_exam_loading_step("");
@@ -1065,6 +1136,81 @@ export default function CoursePage() {
       alert("เกิดข้อผิดพลาดในการสร้างข้อสอบเพิ่มเติม");
       throw error;
     }
+  };
+
+  const HandleMockExamResult = () => {
+    // กำหนดข้อสอบจำลองคุณภาพสูงพร้อมพฤติกรรมการเรียนรู้ของบลูม
+    const mock_questions = [
+      {
+        question: "Which of the following is a key feature of a Relational Database Management System (RDBMS)?",
+        options: [
+          "Data stored in flat text files with no structured relationships",
+          "Data organized into tables with rows and columns using schema definitions",
+          "Data stored exclusively as unstructured binary large objects (BLOBs)",
+          "Data accessed only via custom hardware interfaces"
+        ],
+        correct_answer: 1,
+        domain: "Understand",
+        chapterTitle: "Database Systems",
+        explanation: "An RDBMS organizes data into structured tables consisting of rows and columns, enforcing relationships using keys (primary and foreign keys)."
+      },
+      {
+        question: "What is the primary function of the CPU's Control Unit?",
+        options: [
+          "To perform arithmetic calculations like data manipulation and storage",
+          "To permanently store user data and system files",
+          "To fetch, decode, and execute instructions from memory",
+          "To manage network connectivity and external data transfer"
+        ],
+        correct_answer: 2,
+        domain: "Remember",
+        chapterTitle: "Computer Architecture",
+        explanation: "The Control Unit (CU) coordinates the activities of the CPU by fetching, decoding, and directing the execution of instructions."
+      },
+      {
+        question: "In object-oriented programming, what is Polymorphism?",
+        options: [
+          "The ability of different classes to respond to the same message or method call in their own way",
+          "The process of restricting direct access to some of the object's components",
+          "The practice of creating multiple instances of the same class",
+          "The mechanism of copying all attributes from a parent class to a child class without changes"
+        ],
+        correct_answer: 0,
+        domain: "Apply",
+        chapterTitle: "Software Development",
+        explanation: "Polymorphism allows objects of different classes to be treated as objects of a common superclass, reacting differently to the same method name."
+      },
+      {
+        question: "Analyze the time complexity of the binary search algorithm. What is its worst-case complexity?",
+        options: [
+          "O(1)",
+          "O(N)",
+          "O(N log N)",
+          "O(log N)"
+        ],
+        correct_answer: 3,
+        domain: "Analyze",
+        chapterTitle: "Data Structures & Algorithms",
+        explanation: "Binary search divides the search space in half with each step, yielding a worst-case time complexity of logarithmic time, or O(log N)."
+      },
+      {
+        question: "Evaluate the design of a microservices architecture. Which of the following is a primary trade-off compared to a monolith?",
+        options: [
+          "Microservices are always simpler to deploy and monitor",
+          "Microservices introduce distributed system complexity and network overhead in exchange for independent scalability",
+          "Microservices completely eliminate the need for databases",
+          "Microservices guarantee absolute data consistency across all services by default"
+        ],
+        correct_answer: 1,
+        domain: "Evaluate",
+        chapterTitle: "System Architecture",
+        explanation: "While microservices provide excellent fault isolation and independent scalability, they introduce complex challenges regarding data consistency, network latency, and service orchestration."
+      }
+    ];
+
+    set_exam_questions(mock_questions);
+    set_is_mock_result(true);
+    set_is_viewing_exam(true);
   };
 
   return (
@@ -1197,7 +1343,7 @@ export default function CoursePage() {
               </div>
 
               {/* Exam Tab */}
-              <div className={activeTab === "Exam" ? "flex-1 flex flex-col" : "hidden"}>
+              <div className={activeTab === "Exam" ? "flex-1 flex flex-col overflow-hidden h-full" : "hidden"}>
                 {!user ? (
                   <LoginRequired 
                     title="Examination Mode" 
@@ -1212,20 +1358,25 @@ export default function CoursePage() {
                         subtitle={exam_loading_step}
                       />
                     </div>
-                    <div className={!is_generating_exam && is_viewing_exam ? "flex flex-col h-full" : "hidden"}>
+                    <div className={!is_generating_exam && is_viewing_exam ? "flex flex-col h-full overflow-hidden" : "hidden"}>
                       <ExamPlayer 
                         questions={exam_questions} 
                         topics={course.topics}
                         courseName={course.name_en}
                         userId={user?.uid}
-                        OnClose={() => set_is_viewing_exam(false)} 
+                        OnClose={() => {
+                          set_is_viewing_exam(false);
+                          set_is_mock_result(false);
+                        }} 
                         onGenerateMore={HandleGenerateMoreExam}
+                        initialIsSubmitted={is_mock_result}
                       />
                     </div>
                     <div className={!is_generating_exam && !is_viewing_exam ? "block h-full relative" : "hidden"}>
                       <ExamTab 
                         course_name={course.name_en}
                         OnGenerate={HandleGenerateExam}
+                        OnMockResult={HandleMockExamResult}
                       />
 
                     </div>
