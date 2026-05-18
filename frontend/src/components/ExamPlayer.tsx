@@ -447,7 +447,17 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
         {/* โมดอลออกแบบข้อสอบเพิ่มเติม (Custom Prompt Modal) */}
         {show_prompt_modal && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-transparent backdrop-blur-md px-4">
-            <div className="bg-white rounded-[24px] p-5 sm:p-6 w-full max-w-[420px] shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[98%] overflow-hidden border border-gray-100">
+            <div className="relative bg-white rounded-[24px] p-5 sm:p-6 w-full max-w-[420px] shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[98%] overflow-hidden border border-gray-100">
+              <button
+                type="button"
+                onClick={() => set_show_prompt_modal(false)}
+                className="absolute top-4.5 right-4.5 p-1.5 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all active:scale-95 z-10"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
               <h3 className="text-lg font-black text-gray-900 mb-0.5">ตั้งค่าข้อสอบบทถัดไป</h3>
               <p className="text-[11px] text-gray-500 mb-3.5">เลือกรูปแบบของข้อสอบ 5 ข้อถัดไปที่ต้องการให้ AI ออกแบบ</p>
               
@@ -568,14 +578,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                               : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
                           }`}
                         >
-                          <div className="flex items-center gap-1 justify-center">
-                            {is_checked && (
-                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                            )}
-                            <span>{bloom_item.label}</span>
-                          </div>
+                          <span>{bloom_item.label}</span>
                           {result_data?.chartData && (
                             <span className={`text-[8.5px] font-bold ${is_checked ? 'text-white/80' : 'text-gray-400'}`}>
                               {Math.round(result_data.chartData.find((d: any) => d.subject === bloom_item.key)?.A ?? 0)}%
@@ -589,14 +592,9 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                 </div>
               )}
 
-              <div className="flex gap-2.5 mt-2.5">
+              <div className="mt-2.5">
                 <button
-                  onClick={() => set_show_prompt_modal(false)}
-                  className="flex-1 py-2 px-3 border border-gray-200 hover:bg-gray-50 rounded-xl font-bold text-xs text-gray-600 transition-colors"
-                >
-                  ยกเลิก
-                </button>
-                <button
+                  type="button"
                   onClick={() => {
                     let prompt_text = "";
                     if (exam_mode === "general") {
@@ -615,7 +613,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                     HandleGenerateMore(prompt_text);
                   }}
                   disabled={exam_mode === "bloom" && selected_bloom_levels.length === 0}
-                  className={`flex-1 py-2 font-bold text-xs rounded-xl transition-all ${
+                  className={`w-full py-2.5 font-bold text-xs rounded-xl transition-all text-center ${
                     exam_mode === "bloom" && selected_bloom_levels.length === 0
                       ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                       : "bg-[var(--color-primary)] text-white hover:brightness-110 active:scale-95"
@@ -714,9 +712,6 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                     onClick={() => set_show_prompt_modal(true)}
                     className="w-full py-4 border-2 border-[#8c8cf3]/40 text-[#8c8cf3] hover:bg-[#8c8cf3]/10 active:scale-95 rounded-2xl font-bold text-[16px] transition-all flex items-center justify-center gap-2"
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="9 18 15 12 9 6" />
-                    </svg>
                     บทถัดไป
                   </button>
                 )}
