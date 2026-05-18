@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { apiService, ChatMessage } from "@/services/api";
 import { TypewriterEffect } from "./TypewriterEffect";
 import { useAuth } from "@/contexts/AuthContext";
+import { AILoader } from "./AILoader";
 
 /* ===== ค่าคงที่สำหรับ Quick Prompt Chips ===== */
 const QUICK_PROMPTS = [
@@ -346,14 +347,16 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
 
         <div 
           ref={messages_container_ref}
-          className="h-full overflow-y-auto premium-scrollbar px-5 py-6 flex flex-col gap-6 relative z-0"
+          className={`h-full overflow-y-auto premium-scrollbar px-5 py-6 flex flex-col gap-6 relative z-0 transition-all duration-700 ${has_sent_message ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12 pointer-events-none'}`}
         >
           {messages.map((msg, idx) => {
             /* ซ่อน AI message ที่ยังไม่มีเนื้อหา */
             if (msg.role === 'assistant' && !msg.content) return null;
+            /* ซ่อนข้อความต้อนรับในลิสต์ถ้าเราโชว์ในหน้า Greeting แล้ว */
+            if (idx === 0) return null;
           
             return (
-              <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
                 <div 
                   className={`text-[13.5px] leading-[1.6] ${
                     msg.role === 'user' 
@@ -366,17 +369,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
                     : (
                       <div className="flex gap-4 items-start">
                         <div className="w-9 h-9 flex items-center justify-center shrink-0 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 shadow-[0_4px_12px_rgba(0,0,0,0.1)] mt-0.5 overflow-hidden">
-                          <div className="circle-loader">
-                            <div className="circle circle1"></div>
-                            <div className="circle circle2"></div>
-                            <div className="circle circle3"></div>
-                            <div className="circle circle4"></div>
-                            <div className="circle circle5"></div>
-                            <div className="circle circle6"></div>
-                            <div className="circle circle7"></div>
-                            <div className="circle circle8"></div>
-                            <div className="circle circle9"></div>
-                          </div>
+                          <AILoader isThinking={isLoading} size={0.35} />
                         </div>
                         <div className="assistant-message-dark pt-2 flex-1 min-w-0 overflow-hidden pr-0 sm:pr-[52px]">
                           <TypewriterEffect text={msg.content} animate={msg.animate} />
@@ -415,17 +408,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
             <div className="flex justify-start animate-fade-in-up py-2">
               <div className="flex gap-4 items-center">
                 <div className="w-9 h-9 flex items-center justify-center shrink-0 rounded-full bg-white/5 backdrop-blur-sm border border-white/10 overflow-hidden">
-                  <div className="circle-loader is-thinking scale-75">
-                    <div className="circle circle1"></div>
-                    <div className="circle circle2"></div>
-                    <div className="circle circle3"></div>
-                    <div className="circle circle4"></div>
-                    <div className="circle circle5"></div>
-                    <div className="circle circle6"></div>
-                    <div className="circle circle7"></div>
-                    <div className="circle circle8"></div>
-                    <div className="circle circle9"></div>
-                  </div>
+                  <AILoader isThinking={true} size={0.35} />
                 </div>
                 <span className="text-[12px] text-white/40 font-medium tracking-wide">Thinking....</span>
               </div>
@@ -433,30 +416,50 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
           )}
           <div ref={messagesEndRef} />
         </div>
+
+        {/* Greeting State (แสดงตรงกลางจอใหญ่ๆ ตามรูปภาพ) */}
+        {!has_sent_message && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-8 z-10 transition-all duration-700">
+            <div className="mb-16 transform transition-all duration-1000 hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center">
+              <AILoader isThinking={true} size={3.15} />
+            </div>
+            <div className="text-center space-y-8 max-w-2xl animate-fade-in">
+              <h3 className="text-4xl font-black text-white/90 tracking-tighter uppercase drop-shadow-2xl">
+                {courseName}
+              </h3>
+              <div className="text-white/60 text-[15px] leading-relaxed font-medium px-6">
+                <TypewriterEffect 
+                  text={`สวัสดีครับ! มีข้อสงสัยไหนในวิชา ${courseName} ที่อยากให้ผมช่วยอธิบายเพิ่มเติมไหมครับ?`} 
+                  animate={true} 
+                />
+              </div>
+              
+              {/* Quick Prompt Chips (แสดงในหน้า Greeting เลย) */}
+              {!isLoading && (
+                <div className="flex flex-wrap justify-center gap-2.5 mt-10 animate-fade-in" style={{ animationDelay: '0.8s' }}>
+                  {QUICK_PROMPTS.map((item, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => HandleQuickPrompt(item.prompt)}
+                      className="text-[11px] font-extrabold text-white/40 hover:text-white bg-white/[0.02] hover:bg-white/[0.1] border border-white/5 hover:border-white/20 rounded-full px-5 py-2.5 transition-all duration-300 uppercase tracking-widest shadow-sm"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* #1 — Quick Prompt Chips (แสดงเฉพาะตอนยังไม่เคยส่งข้อความ) */}
-      {!has_sent_message && !isLoading && (
-        <div className="px-5 pb-2 pt-3 shrink-0 bg-white/5 border-t border-white/10">
-          <div className="flex flex-wrap gap-2">
-            {QUICK_PROMPTS.map((item, idx) => (
-              <button
-                key={idx}
-                onClick={() => HandleQuickPrompt(item.prompt)}
-                className="text-[11.5px] font-medium text-white/60 hover:text-white bg-white/[0.07] hover:bg-white/[0.15] border border-white/10 hover:border-white/20 rounded-full px-3.5 py-1.5 transition-all duration-200"
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Quick Prompt Chips (ย้ายไปรวมใน Greeting แล้ว) */}
 
       {/* Input Area */}
-      <div className={`px-6 pb-6 ${has_sent_message || isLoading ? 'pt-3 border-t border-white/10' : 'pt-2'} shrink-0 bg-white/5`}>
+      <div className={`px-6 pb-10 ${has_sent_message || isLoading ? 'pt-3 border-t border-white/10' : 'pt-2'} shrink-0 bg-transparent transition-all duration-700 ease-in-out ${!has_sent_message ? '-translate-y-40' : 'translate-y-0'}`}>
         <form 
           onSubmit={HandleSendMessage}
-          className="flex items-end gap-2 bg-[var(--color-gray-50)] border border-[var(--color-gray-300)] focus-within:border-[var(--color-primary)] focus-within:bg-white rounded-[24px] p-1.5 transition-all duration-200 shadow-[0_4px_15px_rgba(0,0,0,0.05)]"
+          className={`flex items-end gap-2 bg-[var(--color-gray-50)] border border-[var(--color-gray-300)] focus-within:border-[var(--color-primary)] focus-within:bg-white rounded-[24px] p-1.5 transition-all duration-500 ${!has_sent_message ? 'max-w-md mx-auto scale-110' : ''}`}
         >
           <textarea
             value={input}
