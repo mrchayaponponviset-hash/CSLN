@@ -22,7 +22,7 @@ interface ExamPlayerProps {
   topics?: string[];
   courseName?: string;
   userId?: string;
-  onGenerateMore?: (instruction: string) => Promise<void>;
+  onGenerateMore?: (config: { mode: "general" | "difficult" | "bloom", bloom_levels: string[], instruction: string }) => Promise<void>;
   initialIsSubmitted?: boolean;
 }
 
@@ -31,8 +31,16 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   const [selected_option, set_selected_option] = useState<number | null>(null);
   const [user_answers, set_user_answers] = useState<(number | null)[]>(() => Array(questions.length).fill(null));
   
+  // อัปเดตขนาดของอาเรย์คำตอบเมื่อมีข้อสอบใหม่เพิ่มขึ้นมา โดยยังคงรักษาคำตอบเก่าเอาไว้
   useEffect(() => {
-    set_user_answers(Array(questions.length).fill(null));
+    set_user_answers(prev => {
+      if (prev.length >= questions.length) return prev;
+      const next = [...prev];
+      while (next.length < questions.length) {
+        next.push(null);
+      }
+      return next;
+    });
   }, [questions]);
 
   useEffect(() => {
@@ -55,6 +63,39 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   const [show_prompt_modal, set_show_prompt_modal] = useState(false);
   const [custom_prompt, set_custom_prompt] = useState("");
   const [is_generating_more, set_is_generating_more] = useState(false);
+  const [batch_start_idx, set_batch_start_idx] = useState(0);
+  const [generation_step_text, set_generation_step_text] = useState("วิเคราะห์ความยากง่ายและหัวข้อข้อสอบ . . .");
+
+  // เอฟเฟกต์สำหรับอัปเดตสเตตัสการทำงานจริงของ AI ตามลำดับ LangGraph
+  useEffect(() => {
+    if (!is_generating_more) {
+      set_generation_step_text("วิเคราะห์ความยากง่ายและหัวข้อข้อสอบ . . .");
+      return;
+    }
+
+    const steps = [
+      { delay: 0, text: "วิเคราะห์ความยากง่ายและระดับพฤติกรรมบลูมที่กำหนด . . ." },
+      { delay: 2000, text: "จัดสรรเนื้อหาและดึงรายละเอียดรายบทเพื่อออกข้อสอบ . . ." },
+      { delay: 4500, text: "ส่งมอบ Prompt และข้อกำหนดตัวชี้วัดความรู้ไปยังระบบ AI . . ." },
+      { delay: 7000, text: "ปัญญาประดิษฐ์กำลังสังเคราะห์โจทย์คำถามใหม่ 5 ข้อ . . ." },
+      { delay: 10000, text: "กำลังร่างคำอธิบายเฉลยและกำหนดตัวเลือกที่ถูกต้อง . . ." },
+      { delay: 13500, text: "กำลังตรวจสอบคุณภาพ ความถูกต้อง และระดับความน่าเชื่อถือ . . ." },
+      { delay: 16500, text: "จัดเตรียมหน้าข้อสอบชุดถัดไปเรียบร้อยแล้ว . . ." }
+    ];
+
+    const timers: NodeJS.Timeout[] = [];
+
+    steps.forEach(step => {
+      const timer = setTimeout(() => {
+        set_generation_step_text(step.text);
+      }, step.delay);
+      timers.push(timer);
+    });
+
+    return () => {
+      timers.forEach(clearTimeout);
+    };
+  }, [is_generating_more]);
 
   // Review Answers State
   const [is_reviewing, set_is_reviewing] = useState(false);
@@ -168,21 +209,32 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
     }
   };
 
-  const HandleGenerateMore = async (instruction?: string) => {
+  // ฟังก์ชันสำหรับเรียก Generate ข้อสอบเพิ่มเติมผ่าน API บอร์ด
+  const HandleGenerateMore = async (
+    instruction: string,
+    mode: "general" | "difficult" | "bloom",
+    bloom_levels: string[]
+  ) => {
     if (!onGenerateMore) return;
+    const next_batch_start = questions.length;
     set_is_generating_more(true);
     try {
-      const final_prompt = typeof instruction === "string" ? instruction : custom_prompt;
-      await onGenerateMore(final_prompt);
+      // เรียก props เพื่อขอสร้างข้อสอบชุดถัดไปตามโหมดที่กำหนด
+      await onGenerateMore({
+        mode,
+        bloom_levels,
+        instruction
+      });
       set_show_prompt_modal(false);
       set_custom_prompt("");
       
-      // Resume quiz
-      set_current_idx(prev => prev + 1);
+      // ดำเนินการรีเซ็ต state เพื่อเริ่มทำชุดใหม่เฉพาะ 5 ข้อล่าสุดที่สร้างขึ้น
+      set_batch_start_idx(next_batch_start);
+      set_current_idx(next_batch_start);
       set_selected_option(null);
       set_is_submitted(false);
       set_is_reviewing(false);
-      set_ai_analysis_text(null); // clear old analysis for next batch
+      set_ai_analysis_text(null);
     } catch (error) {
       console.error(error);
     } finally {
@@ -448,180 +500,215 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
         {show_prompt_modal && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-transparent backdrop-blur-md px-4">
             <div className="relative bg-white rounded-[24px] p-5 sm:p-6 w-full max-w-[420px] shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[98%] overflow-hidden border border-gray-100">
-              <button
-                type="button"
-                onClick={() => set_show_prompt_modal(false)}
-                className="absolute top-4.5 right-4.5 p-1.5 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all active:scale-95 z-10"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
-              <h3 className="text-lg font-black text-gray-900 mb-0.5">ตั้งค่าข้อสอบบทถัดไป</h3>
-              <p className="text-[11px] text-gray-500 mb-3.5">เลือกรูปแบบของข้อสอบ 5 ข้อถัดไปที่ต้องการให้ AI ออกแบบ</p>
-              
-              <div className="space-y-2 mb-3.5">
-                {/* ตัวเลือกที่ 1: ทั่วไป */}
-                <button
-                  onClick={() => set_exam_mode("general")}
-                  className={`w-full p-2.5 px-3.5 rounded-xl border-2 text-left transition-all flex items-start gap-3 ${
-                    exam_mode === "general"
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5"
-                      : "border-gray-100 hover:border-gray-200 bg-white"
-                  }`}
-                >
-                  <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                    exam_mode === "general" ? "border-[var(--color-primary)]" : "border-gray-300"
-                  }`}>
-                    {exam_mode === "general" && <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)]" />}
+              {is_generating_more ? (
+                <div className="flex flex-col items-center justify-center py-10 px-4 animate-in fade-in duration-500 min-h-[340px]">
+                  {/* แอนิเมชันกล่องขยับ (banter-loader) ขนาดและอัตราส่วนเทียบเท่าหน้า Flashcard */}
+                  <div className="relative w-full h-24 flex items-center justify-center mb-8 scale-100">
+                    <div className="banter-loader">
+                      <div className="banter-loader__box"></div>
+                      <div className="banter-loader__box"></div>
+                      <div className="banter-loader__box"></div>
+                      <div className="banter-loader__box"></div>
+                      <div className="banter-loader__box"></div>
+                      <div className="banter-loader__box"></div>
+                      <div className="banter-loader__box"></div>
+                      <div className="banter-loader__box"></div>
+                      <div className="banter-loader__box"></div>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-[12.5px] font-bold text-gray-900">1. ทั่วไป (General)</h4>
-                    <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">คละระดับความยากทั่วไป เน้นความรู้และความเข้าใจตามหลักสูตร</p>
-                  </div>
-                </button>
-
-                {/* ตัวเลือกที่ 2: ยาก */}
-                <button
-                  onClick={() => set_exam_mode("difficult")}
-                  className={`w-full p-2.5 px-3.5 rounded-xl border-2 text-left transition-all flex items-start gap-3 ${
-                    exam_mode === "difficult"
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5"
-                      : "border-gray-100 hover:border-gray-200 bg-white"
-                  }`}
-                >
-                  <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                    exam_mode === "difficult" ? "border-[var(--color-primary)]" : "border-gray-300"
-                  }`}>
-                    {exam_mode === "difficult" && <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)]" />}
-                  </div>
-                  <div>
-                    <h4 className="text-[12.5px] font-bold text-gray-900">2. ยาก (Difficult)</h4>
-                    <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">ท้าทายระดับสูง เน้นโจทย์แนววิเคราะห์ การประเมินค่า และการประยุกต์ใช้งาน</p>
-                  </div>
-                </button>
-
-                {/* ตัวเลือกที่ 3: กำหนดข้อจาก Bloom Taxonomy */}
-                <button
-                  onClick={() => set_exam_mode("bloom")}
-                  className={`w-full p-2.5 px-3.5 rounded-xl border-2 text-left transition-all flex items-start gap-3 ${
-                    exam_mode === "bloom"
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5"
-                      : "border-gray-100 hover:border-gray-200 bg-white"
-                  }`}
-                >
-                  <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                    exam_mode === "bloom" ? "border-[var(--color-primary)]" : "border-gray-300"
-                  }`}>
-                    {exam_mode === "bloom" && <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)]" />}
-                  </div>
-                  <div>
-                    <h4 className="text-[12.5px] font-bold text-gray-900">3. กำหนดข้อจาก Bloom&apos;s Taxonomy</h4>
-                    <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">เลือกเน้นระดับพฤติกรรมการเรียนรู้ที่คุณต้องการพัฒนาเป็นพิเศษ</p>
-                  </div>
-                </button>
-              </div>
-
-              {/* ส่วนขยายการเลือกของ Bloom's Taxonomy */}
-              {exam_mode === "bloom" && (
-                <div className="bg-gray-50/50 rounded-lg p-2 border border-gray-100 mb-2.5 animate-in slide-in-from-top-2 duration-300">
-                  <h5 className="text-[10px] font-bold text-gray-700 mb-1.5">เลือกระดับ Bloom&apos;s Taxonomy</h5>
                   
-                  {result_data?.chartData && (
-                    <div className="bg-white/70 rounded-lg p-2 border border-gray-100 mb-2 text-[9px] text-gray-600 flex flex-col gap-1">
-                      <div className="grid grid-cols-3 gap-x-2 gap-y-0.5 text-gray-500">
+                  {/* หัวข้อหน้าระหว่าง Generate ข้อสอบ - ปรับขนาดเพื่อให้แสดงในบรรทัดเดียวอย่างสง่างาม */}
+                  <h3 className="text-[17px] sm:text-[19px] md:text-[21px] font-black text-gray-900 tracking-tight text-center mb-4.5 uppercase">
+                    Generating Examination
+                  </h3>
+                  
+                  {/* ข้อความจำลองการทำงานของ AI แบบกระพริบเรียลไทม์ (animate-pulse) ตามจริง */}
+                  <div className="flex flex-col items-center gap-1 text-center animate-pulse px-2">
+                    <span className="text-[11px] sm:text-[12px] font-bold text-[var(--color-primary)] tracking-wider uppercase mb-0.5">
+                      ชุดที่ {Math.floor(questions.length / 5) + 1} (ข้อ {questions.length + 1} - {questions.length + 5})
+                    </span>
+                    <span className="text-[12.5px] font-medium text-gray-400 leading-relaxed min-h-[38px] max-w-[290px]">
+                      {generation_step_text}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => set_show_prompt_modal(false)}
+                    className="absolute top-4.5 right-4.5 p-1.5 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all active:scale-95 z-10"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </button>
+                  <h3 className="text-lg font-black text-gray-900 mb-0.5">ตั้งค่าข้อสอบบทถัดไป</h3>
+                  <p className="text-[11px] text-gray-500 mb-3.5">เลือกรูปแบบของข้อสอบ 5 ข้อถัดไปที่ต้องการให้ AI ออกแบบ</p>
+                  
+                  <div className="space-y-2 mb-3.5">
+                    {/* ตัวเลือกที่ 1: ทั่วไป */}
+                    <button
+                      onClick={() => set_exam_mode("general")}
+                      className={`w-full p-2.5 px-3.5 rounded-xl border-2 text-left transition-all flex items-start gap-3 ${
+                        exam_mode === "general"
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5"
+                          : "border-gray-100 hover:border-gray-200 bg-white"
+                      }`}
+                    >
+                      <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                        exam_mode === "general" ? "border-[var(--color-primary)]" : "border-gray-300"
+                      }`}>
+                        {exam_mode === "general" && <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)]" />}
+                      </div>
+                      <div>
+                        <h4 className="text-[12.5px] font-bold text-gray-900">1. ทั่วไป (General)</h4>
+                        <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">คละระดับความยากทั่วไป เน้นความรู้และความเข้าใจตามหลักสูตร</p>
+                      </div>
+                    </button>
+
+                    {/* ตัวเลือกที่ 2: ยาก */}
+                    <button
+                      onClick={() => set_exam_mode("difficult")}
+                      className={`w-full p-2.5 px-3.5 rounded-xl border-2 text-left transition-all flex items-start gap-3 ${
+                        exam_mode === "difficult"
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5"
+                          : "border-gray-100 hover:border-gray-200 bg-white"
+                      }`}
+                    >
+                      <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                        exam_mode === "difficult" ? "border-[var(--color-primary)]" : "border-gray-300"
+                      }`}>
+                        {exam_mode === "difficult" && <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)]" />}
+                      </div>
+                      <div>
+                        <h4 className="text-[12.5px] font-bold text-gray-900">2. ยาก (Difficult)</h4>
+                        <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">ท้าทายระดับสูง เน้นโจทย์แนววิเคราะห์ การประเมินค่า และการประยุกต์ใช้งาน</p>
+                      </div>
+                    </button>
+
+                    {/* ตัวเลือกที่ 3: กำหนดข้อจาก Bloom Taxonomy */}
+                    <button
+                      onClick={() => set_exam_mode("bloom")}
+                      className={`w-full p-2.5 px-3.5 rounded-xl border-2 text-left transition-all flex items-start gap-3 ${
+                        exam_mode === "bloom"
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5"
+                          : "border-gray-100 hover:border-gray-200 bg-white"
+                      }`}
+                    >
+                      <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                        exam_mode === "bloom" ? "border-[var(--color-primary)]" : "border-gray-300"
+                      }`}>
+                        {exam_mode === "bloom" && <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)]" />}
+                      </div>
+                      <div>
+                        <h4 className="text-[12.5px] font-bold text-gray-900">3. กำหนดข้อจาก Bloom&apos;s Taxonomy</h4>
+                        <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">เลือกเน้นระดับพฤติกรรมการเรียนรู้ที่คุณต้องการพัฒนาเป็นพิเศษ</p>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* ส่วนขยายการเลือกของ Bloom's Taxonomy */}
+                  {exam_mode === "bloom" && (
+                    <div className="bg-gray-50/50 rounded-lg p-2 border border-gray-100 mb-2.5 animate-in slide-in-from-top-2 duration-300">
+                      <h5 className="text-[10px] font-bold text-gray-700 mb-1.5">เลือกระดับ Bloom&apos;s Taxonomy</h5>
+                      
+                      {result_data?.chartData && (
+                        <div className="bg-white/70 rounded-lg p-2 border border-gray-100 mb-2 text-[9px] text-gray-600 flex flex-col gap-1">
+                          <div className="grid grid-cols-3 gap-x-2 gap-y-0.5 text-gray-500">
+                            {[
+                              { key: "Remember", label: "ความจำ" },
+                              { key: "Understand", label: "ความเข้าใจ" },
+                              { key: "Apply", label: "การประยุกต์ใช้" },
+                              { key: "Analyze", label: "การวิเคราะห์" },
+                              { key: "Evaluate", label: "การประเมินค่า" },
+                              { key: "Create", label: "การสร้างสรรค์" }
+                            ].map((item) => {
+                              const score_obj = result_data.chartData.find((d: any) => d.subject === item.key);
+                              const score = score_obj ? Math.round(score_obj.A) : 0;
+                              return (
+                                <div key={item.key} className="flex justify-between border-b border-gray-50 pb-0.5">
+                                  <span>{item.label}:</span>
+                                  <span className="font-black text-[var(--color-primary)]">{score}%</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-1">
                         {[
-                          { key: "Remember", label: "ความจำ" },
-                          { key: "Understand", label: "ความเข้าใจ" },
-                          { key: "Apply", label: "การประยุกต์ใช้" },
-                          { key: "Analyze", label: "การวิเคราะห์" },
-                          { key: "Evaluate", label: "การประเมินค่า" },
-                          { key: "Create", label: "การสร้างสรรค์" }
-                        ].map((item) => {
-                          const score_obj = result_data.chartData.find((d: any) => d.subject === item.key);
-                          const score = score_obj ? Math.round(score_obj.A) : 0;
+                          { key: "Remember", label: "ความจำ (Remember)" },
+                          { key: "Understand", label: "ความเข้าใจ (Understand)" },
+                          { key: "Apply", label: "การประยุกต์ใช้ (Apply)" },
+                          { key: "Analyze", label: "การวิเคราะห์ (Analyze)" },
+                          { key: "Evaluate", label: "การประเมินค่า (Evaluate)" },
+                          { key: "Create", label: "การสร้างสรรค์ (Create)" }
+                        ].map((bloom_item) => {
+                          const is_checked = selected_bloom_levels.includes(bloom_item.key);
                           return (
-                            <div key={item.key} className="flex justify-between border-b border-gray-50 pb-0.5">
-                              <span>{item.label}:</span>
-                              <span className="font-black text-[var(--color-primary)]">{score}%</span>
-                            </div>
+                            <button
+                              key={bloom_item.key}
+                              type="button"
+                              onClick={() => {
+                                if (is_checked) {
+                                  set_selected_bloom_levels(prev => prev.filter(k => k !== bloom_item.key));
+                                } else {
+                                  set_selected_bloom_levels(prev => [...prev, bloom_item.key]);
+                                }
+                              }}
+                              className={`p-1.5 rounded-lg border text-[10px] font-bold text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
+                                is_checked
+                                  ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white"
+                                  : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
+                              }`}
+                            >
+                              <span>{bloom_item.label}</span>
+                              {result_data?.chartData && (
+                                <span className={`text-[8.5px] font-bold ${is_checked ? 'text-white/80' : 'text-gray-400'}`}>
+                                  {Math.round(result_data.chartData.find((d: any) => d.subject === bloom_item.key)?.A ?? 0)}%
+                                </span>
+                              )}
+                            </button>
                           );
                         })}
                       </div>
                     </div>
                   )}
-                  <div className="grid grid-cols-2 gap-1">
-                    {[
-                      { key: "Remember", label: "ความจำ (Remember)" },
-                      { key: "Understand", label: "ความเข้าใจ (Understand)" },
-                      { key: "Apply", label: "การประยุกต์ใช้ (Apply)" },
-                      { key: "Analyze", label: "การวิเคราะห์ (Analyze)" },
-                      { key: "Evaluate", label: "การประเมินค่า (Evaluate)" },
-                      { key: "Create", label: "การสร้างสรรค์ (Create)" }
-                    ].map((bloom_item) => {
-                      const is_checked = selected_bloom_levels.includes(bloom_item.key);
-                      return (
-                        <button
-                          key={bloom_item.key}
-                          type="button"
-                          onClick={() => {
-                            if (is_checked) {
-                              set_selected_bloom_levels(prev => prev.filter(k => k !== bloom_item.key));
-                            } else {
-                              set_selected_bloom_levels(prev => [...prev, bloom_item.key]);
-                            }
-                          }}
-                          className={`p-1.5 rounded-lg border text-[10px] font-bold text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
-                            is_checked
-                              ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white"
-                              : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
-                          }`}
-                        >
-                          <span>{bloom_item.label}</span>
-                          {result_data?.chartData && (
-                            <span className={`text-[8.5px] font-bold ${is_checked ? 'text-white/80' : 'text-gray-400'}`}>
-                              {Math.round(result_data.chartData.find((d: any) => d.subject === bloom_item.key)?.A ?? 0)}%
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
+
+                  <div className="mt-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let prompt_text = "";
+                        if (exam_mode === "general") {
+                          prompt_text = "ขอข้อสอบระดับทั่วไป คละเนื้อหาและความยากง่าย";
+                        } else if (exam_mode === "difficult") {
+                          prompt_text = "ขอข้อสอบที่ยากขึ้นระดับยากและท้าทาย เน้นโจทย์แนววิเคราะห์ การสังเคราะห์ และการประเมินค่าระดับสูง";
+                        } else if (exam_mode === "bloom") {
+                          if (selected_bloom_levels.length === 0) {
+                            alert("โปรดเลือกระดับ Bloom's Taxonomy อย่างน้อย 1 ข้อ");
+                            return;
+                          }
+                          prompt_text = `ขอข้อสอบเน้นคำถามระดับ Bloom's Taxonomy ดังต่อไปนี้เท่านั้น: ${selected_bloom_levels.join(", ")}`;
+                        }
+                        
+                        // เรียก HandleGenerateMore โดยเก็บ Modal โหลดไว้
+                        HandleGenerateMore(prompt_text, exam_mode, selected_bloom_levels);
+                      }}
+                      disabled={exam_mode === "bloom" && selected_bloom_levels.length === 0}
+                      className={`w-full py-2.5 font-bold text-xs rounded-xl transition-all text-center ${
+                        exam_mode === "bloom" && selected_bloom_levels.length === 0
+                          ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          : "bg-[var(--color-primary)] text-white hover:brightness-110 active:scale-95"
+                      }`}
+                    >
+                      {is_generating_more ? "กำลังสร้าง..." : "เริ่มสร้างข้อสอบ"}
+                    </button>
                   </div>
-
-                </div>
+                </>
               )}
-
-              <div className="mt-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    let prompt_text = "";
-                    if (exam_mode === "general") {
-                      prompt_text = "ขอข้อสอบระดับทั่วไป คละเนื้อหาและความยากง่าย";
-                    } else if (exam_mode === "difficult") {
-                      prompt_text = "ขอข้อสอบที่ยากขึ้นระดับยากและท้าทาย เน้นโจทย์แนววิเคราะห์ การสังเคราะห์ และการประเมินค่าระดับสูง";
-                    } else if (exam_mode === "bloom") {
-                      if (selected_bloom_levels.length === 0) {
-                        alert("โปรดเลือกระดับ Bloom's Taxonomy อย่างน้อย 1 ข้อ");
-                        return;
-                      }
-                      prompt_text = `ขอข้อสอบเน้นคำถามระดับ Bloom's Taxonomy ดังต่อไปนี้เท่านั้น: ${selected_bloom_levels.join(", ")}`;
-                    }
-                    
-                    set_show_prompt_modal(false);
-                    HandleGenerateMore(prompt_text);
-                  }}
-                  disabled={exam_mode === "bloom" && selected_bloom_levels.length === 0}
-                  className={`w-full py-2.5 font-bold text-xs rounded-xl transition-all text-center ${
-                    exam_mode === "bloom" && selected_bloom_levels.length === 0
-                      ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                      : "bg-[var(--color-primary)] text-white hover:brightness-110 active:scale-95"
-                  }`}
-                >
-                  {is_generating_more ? "กำลังสร้าง..." : "เริ่มสร้างข้อสอบ"}
-                </button>
-              </div>
             </div>
           </div>
         )}
@@ -726,8 +813,13 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
 
 
   // --- QUESTION MODE (Single Scrollable Page Layout) ---
-  const answeredCount = user_answers.filter(a => a !== null).length;
-  const progressPercent = (answeredCount / questions.length) * 100;
+  // แสดงผลทำควิซชุดใหม่ทีละ 5 ข้อ แต่ยังบันทึกสะสมคะแนนจากชุดเก่าทั้งหมดไว้ในเบื้องหลัง
+  const active_questions = questions.slice(batch_start_idx, batch_start_idx + 5);
+  const current_batch_answers = user_answers.slice(batch_start_idx, batch_start_idx + 5);
+  
+  const answeredCount = current_batch_answers.filter(a => a !== null).length;
+  const progressPercent = (answeredCount / 5) * 100;
+  const is_batch_empty = current_batch_answers.every(a => a === null);
 
   return (
     <div className="h-full flex flex-col bg-white animate-in fade-in duration-700 overflow-hidden relative">
@@ -737,7 +829,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
           <div>
             <h2 className="text-lg font-bold text-[var(--color-black)] leading-tight">Course Examination</h2>
             <p className="text-[10px] font-bold text-[var(--color-gray-400)] uppercase tracking-widest mt-0.5">
-              Answered {answeredCount} of {questions.length} Questions
+              Answered {answeredCount} of 5 Questions (Batch {Math.floor(batch_start_idx / 5) + 1} / 8)
             </p>
           </div>
           <button onClick={OnClose} className="p-2 text-[var(--color-gray-400)] hover:bg-gray-50 rounded-full transition-colors active:scale-90">
@@ -767,7 +859,8 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
         {/* ปรับสกรอลล์คอนเทนเนอร์ - ใช้ pl-6 md:pl-8 lg:pl-14 และคำนวณหักลบ pr-5 ของสกรอลล์บาร์ด้วย pr-1 md:pr-3 lg:pr-[36px] เพื่อให้ได้ความสมมาตรซ้ายขวาพอดีเป๊ะ */}
         <div className="h-full overflow-y-auto pl-6 md:pl-8 lg:pl-14 pr-1 md:pr-3 lg:pr-[36px] py-6 flex flex-col premium-scrollbar">
           <div className="max-w-4xl mx-auto w-full flex-1 flex flex-col">
-          {questions.map((q, q_idx) => {
+          {active_questions.map((q, local_idx) => {
+            const q_idx = batch_start_idx + local_idx;
             return (
               <div key={q_idx} className="bg-white border border-gray-200 rounded-2xl p-6 md:p-8 mb-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <h3 className="text-[16px] md:text-[18px] font-normal text-[var(--color-black)] leading-relaxed mb-4">
@@ -816,9 +909,9 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                 set_is_submitted(true);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              disabled={user_answers.every(a => a === null)}
+              disabled={is_batch_empty}
               className={`w-full h-[64px] md:h-[68px] rounded-2xl font-bold text-[18px] transition-all flex items-center justify-center gap-2 ${
-                user_answers.every(a => a === null)
+                is_batch_empty
                   ? "bg-gray-100 text-gray-400 cursor-not-allowed" 
                   : "bg-[#8c8cf3] text-white hover:brightness-110 active:scale-95 shadow-[0_4px_14px_-4px_rgba(140,140,243,0.4)]"
               }`}

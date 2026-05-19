@@ -24,7 +24,7 @@ import { QuizTab } from "@/components/QuizTab";
 import { FlashcardsLoading } from "@/components/FlashcardsLoading";
 import { FlashcardsPlayer } from "@/components/FlashcardsPlayer";
 import { QuizPlayer } from "@/components/QuizPlayer";
-import { ExamTab } from "@/components/ExamTab";
+import { ExamTab, ExamConfig } from "@/components/ExamTab";
 import { ExamPlayer } from "@/components/ExamPlayer";
 import { useAuth } from "@/contexts/AuthContext";
 import ReactMarkdown from "react-markdown";
@@ -725,16 +725,40 @@ export default function CoursePage() {
   const [is_viewing_exam, set_is_viewing_exam] = useState(false);
   const [exam_questions, set_exam_questions] = useState<any[]>([]);
   const [current_exam_batch, set_current_exam_batch] = useState(0);
-  const [total_exam_batches] = useState(8);
+  const TOTAL_EXAM_QUESTIONS = 40;
+  const EXAM_BATCH_SIZE = 5;
+  const TOTAL_EXAM_BATCHES = Math.ceil(TOTAL_EXAM_QUESTIONS / EXAM_BATCH_SIZE);
   const exam_context_ref = React.useRef<{ title: string; content: string }[]>([]);
   const exam_batch_idx_ref = React.useRef<number>(0);
+  // ตารางกระจายบทเรียนแบบ Round-Robin สำหรับทั้ง 8 batches
+  const exam_schedule_ref = React.useRef<string[][]>([]);
+  // เก็บ config ที่ผู้ใช้เลือก (mode + bloom_levels) เพื่อใช้ซ้ำตอน Generate More
+  const exam_config_ref = React.useRef<ExamConfig>({ mode: "general", bloom_levels: [] });
   
   // สำหรับการทดสอบและทำ Mockup หน้าผลสอบโดยตรง
   const [is_mock_result, set_is_mock_result] = useState(false);
-  
-  // Custom Prompt Modal State (For Generate More Exam)
-  const [show_exam_prompt_modal, set_show_exam_prompt_modal] = useState(false);
-  const [exam_custom_instruction, set_exam_custom_instruction] = useState("");
+
+  // ฟังก์ชันช่วยเหลือสำหรับ Retry Logic พร้อม Exponential Backoff ตามมาตรฐาน Coding Standard
+  async function FetchWithRetry<T>(
+    fn: () => Promise<T>,
+    retries_left: number = 3,
+    delay_ms: number = 1000,
+    backoff_factor: number = 2
+  ): Promise<T> {
+    try {
+      // เรียกใช้ฟังก์ชันที่ส่งเข้ามา
+      return await fn();
+    } catch (error) {
+      if (retries_left <= 0) {
+        throw error;
+      }
+      console.warn(`[RETRY] API call failed, retrying in ${delay_ms}ms... (${retries_left} retries left)`, error);
+      // รอตามเวลาที่กำหนดด้วย setTimeout
+      await new Promise((resolve) => setTimeout(resolve, delay_ms));
+      // เรียกตัวเองซ้ำแบบ Recursive พร้อมปรับลดจำนวนครั้งและคูณเวลาดีเลย์ (Exponential Backoff)
+      return FetchWithRetry(fn, retries_left - 1, delay_ms * backoff_factor, backoff_factor);
+    }
+  }
 
   useEffect(() => {
     const current_slug = Array.isArray(slug) ? slug[0] : slug;
@@ -742,28 +766,61 @@ export default function CoursePage() {
     // ระยะเวลาขั้นต่ำที่ skeleton จะแสดง (มิลลิวินาที) — ให้ผู้ใช้เห็น loading transition ที่ลื่นไหล
     const MIN_SKELETON_DELAY_MS = 2500;
     
-    async function loadLessons() {
+    // ฟังก์ชันสร้างข้อมูลสำรอง (Fallback) จาก ALL_STATIC_CONTENT ในกรณีที่การดึงข้อมูลจาก Database ล้มเหลว
+    const GetStaticFallbackLessons = (slug_str: string): any[] => {
+      const static_course_data = ALL_STATIC_CONTENT[slug_str];
+      if (static_course_data && static_course_data.chapters) {
+        return static_course_data.chapters.map((ch: any, idx: number) => {
+          let content = `# ${ch.chapter_title}\n\n`;
+          if (ch.description) {
+            content += `${ch.description}\n\n`;
+          }
+          if (ch.dropdowns) {
+            ch.dropdowns.forEach((d: any) => {
+              content += `\n**${d.header}**\n${d.content}\n`;
+            });
+          }
+          return {
+            id: `static-lesson-${idx}`,
+            title: ch.chapter_title,
+            chapter_title: ch.chapter_title,
+            content: content,
+            order_index: idx
+          };
+        });
+      }
+      return [];
+    };
+
+    async function LoadLessons() {
       setLoadingLessons(true);
       try {
-        // รอทั้ง API fetch และ minimum delay พร้อมกัน
-        const [fetchedLessons] = await Promise.all([
-          apiService.getLessons(slug),
+        // ดำเนินการ Retry logic ดึงข้อมูลบทเรียน และคอยดีเลย์ Skeleton loading ไปพร้อมกัน
+        const [fetched_lessons] = await Promise.all([
+          FetchWithRetry(() => apiService.getLessons(slug), 3, 1000, 2),
           new Promise((resolve) => setTimeout(resolve, MIN_SKELETON_DELAY_MS))
         ]);
         
-        // จัดเรียงตาม order_index
-        (fetchedLessons as any[]).sort((a: any, b: any) => a.order_index - b.order_index);
+        let final_lessons = fetched_lessons as any[];
+        if (!final_lessons || final_lessons.length === 0) {
+          console.warn("[FALLBACK] Fetched lessons is empty, applying static fallback content");
+          final_lessons = GetStaticFallbackLessons(current_slug);
+        } else {
+          // จัดเรียงบทเรียนตามดัชนีของลำดับ (order_index)
+          final_lessons.sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+        }
         
-        setLessons(fetchedLessons as any[]);
+        setLessons(final_lessons);
       } catch (err) {
-        console.error("Failed to load lessons from database:", err);
-        setLessons([]);
+        console.error("[ERROR] Failed to load lessons from database, applying static fallback:", err);
+        const fallback_lessons = GetStaticFallbackLessons(current_slug);
+        setLessons(fallback_lessons);
       } finally {
         setLoadingLessons(false);
       }
     }
     
-    loadLessons();
+    LoadLessons();
   }, [slug]);
 
 
@@ -979,18 +1036,38 @@ export default function CoursePage() {
     }
   };
 
-  const HandleGenerateExam = async () => {
+  // อัลกอริทึม Round-Robin: สร้างตารางกระจายบทเรียนอย่างเท่าเทียมสำหรับทุก batch
+  const BuildChapterSchedule = (topics: string[], total_questions: number, batch_size: number): string[][] => {
+    const total_batches = Math.ceil(total_questions / batch_size);
+    const schedule: string[][] = [];
+    let topic_cursor = 0;
+    for (let b = 0; b < total_batches; b++) {
+      const batch_chapters: string[] = [];
+      for (let q = 0; q < batch_size; q++) {
+        batch_chapters.push(topics[topic_cursor % topics.length]);
+        topic_cursor++;
+      }
+      schedule.push(batch_chapters);
+    }
+    return schedule;
+  };
+
+  const HandleGenerateExam = async (config: ExamConfig) => {
     set_is_generating_exam(true);
     set_exam_progress(0);
     set_current_exam_batch(0);
     
-    // ===== Phase 1: เตรียมข้อมูลบทเรียน (0% → 10%) =====
+    // บันทึก config ที่ผู้ใช้เลือกไว้ใช้ซ้ำตอน Generate More
+    exam_config_ref.current = config;
+    
+    // ===== Phase 1: เตรียมข้อมูลบทเรียนและสร้างตาราง Round-Robin (0% → 10%) =====
     set_exam_loading_step("กำลังรวบรวมเนื้อหาจากบทเรียนทั้งหมด...");
     set_exam_progress(2);
     
     let progress_interval: any = null;
     
     try {
+      // รวบรวมเนื้อหาจากทุกบทเรียนของ course นี้
       const examChapters = course.topics.map((topic: string) => {
         let content = "";
         const current_course_data = ALL_STATIC_CONTENT[slug];
@@ -1005,41 +1082,37 @@ export default function CoursePage() {
             }
           }
         }
-        return {
-          title: topic,
-          content: content
-        };
+        return { title: topic, content: content };
       });
 
-      // บันทึก context สำหรับ Generate More ในอนาคต
+      // บันทึก context และสร้างตาราง Round-Robin สำหรับ Generate More ในอนาคต
       exam_context_ref.current = examChapters;
       exam_batch_idx_ref.current = 0;
+      const schedule = BuildChapterSchedule(course.topics, TOTAL_EXAM_QUESTIONS, EXAM_BATCH_SIZE);
+      exam_schedule_ref.current = schedule;
 
-      // ระบุชื่อบทจริงที่ Backend จะนำไปประมวลผล (batchIdx=0 → บทแรก)
-      const target_chapter_name = course.topics[0 % course.topics.length];
+      // ดึงรายชื่อบทที่ batch แรกต้องใช้
+      const batch_chapters = schedule[0] || [];
+      const unique_chapter_names = [...new Set(batch_chapters)];
       
       set_exam_progress(8);
-      set_exam_loading_step(`เตรียมเนื้อหา ${examChapters.length} บทเรียนเสร็จแล้ว`);
+      set_exam_loading_step(`เตรียมเนื้อหา ${examChapters.length} บทเรียนเสร็จแล้ว (คละ ${unique_chapter_names.length} บทใน batch แรก)`);
       
-      // หน่วงเล็กน้อยเพื่อให้ผู้ใช้เห็นข้อความ Phase 1 ก่อนเข้า Phase 2
       await new Promise(r => setTimeout(r, 600));
 
-      // ===== Phase 2: ส่งข้อมูลไป AI และรอผลลัพธ์ (10% → 85%) =====
+      // ===== Phase 2: ส่งข้อมูลไป AI พร้อม config และ chapter_assignments (10% → 85%) =====
       set_exam_progress(10);
-      set_exam_loading_step(`กำลังส่งข้อมูลบท "${target_chapter_name}" ไปยัง AI...`);
+      set_exam_loading_step(`กำลังส่งข้อมูล ${unique_chapter_names.length} บทเรียนไปยัง AI...`);
 
-      // Progress เลื่อนขึ้นอย่างสม่ำเสมอตามเวลาจริง (ไม่สุ่ม)
-      // ทุก 1 วินาที เพิ่ม ~2.5% → ครอบคลุม ~30 วินาทีจาก 10% ถึง 85%
       const PHASE2_START = 10;
       const PHASE2_END = 85;
       const TICK_MS = 1000;
       const phase2_start_time = Date.now();
-      const ESTIMATED_DURATION_MS = 30000; // ประมาณ 30 วินาทีสำหรับการเจน 5 ข้อ
+      const ESTIMATED_DURATION_MS = 30000;
       
-      // ขั้นตอนย่อยที่แสดงตามลำดับเวลาจริง (ไม่สุ่ม)
       const phase2_steps = [
-        { at: 0.05, text: `กำลังวิเคราะห์เนื้อหาบท "${target_chapter_name}"...` },
-        { at: 0.20, text: `กำลังออกแบบคำถาม 5 ข้อ ตาม Bloom's Taxonomy...` },
+        { at: 0.05, text: `กำลังวิเคราะห์เนื้อหาจาก ${unique_chapter_names.length} บท...` },
+        { at: 0.20, text: `กำลังออกแบบคำถาม ${EXAM_BATCH_SIZE} ข้อ คละบทเรียน...` },
         { at: 0.40, text: `กำลังสร้างตัวเลือกและกำหนดคำตอบที่ถูกต้อง...` },
         { at: 0.60, text: `กำลังเขียนคำอธิบายเฉลยสำหรับแต่ละข้อ...` },
         { at: 0.80, text: `กำลังตรวจสอบคุณภาพและความถูกต้อง...` },
@@ -1048,15 +1121,10 @@ export default function CoursePage() {
 
       progress_interval = setInterval(() => {
         const elapsed = Date.now() - phase2_start_time;
-        // คำนวณ % ที่ควรจะเป็นตามเวลาที่ผ่านไป (สูงสุดไม่เกิน PHASE2_END)
         const ratio = Math.min(elapsed / ESTIMATED_DURATION_MS, 1);
-        // ใช้ ease-out curve เพื่อให้ช่วงแรกเร็ว ช่วงหลังช้าลง (สมจริง)
         const eased = 1 - Math.pow(1 - ratio, 2);
         const target_progress = PHASE2_START + (PHASE2_END - PHASE2_START) * eased;
-        
         set_exam_progress(prev => Math.max(prev, Math.min(target_progress, PHASE2_END)));
-
-        // อัปเดตข้อความตามลำดับเวลาจริง (ไม่สุ่ม)
         for (let i = phase2_steps.length - 1; i >= 0; i--) {
           if (ratio >= phase2_steps[i].at && i > last_step_shown) {
             set_exam_loading_step(phase2_steps[i].text);
@@ -1066,14 +1134,15 @@ export default function CoursePage() {
         }
       }, TICK_MS);
 
-      // เรียก API จริง — รอจนกว่าจะเสร็จ
-      const data = await apiService.generateExam(examChapters, slug, 0, total_exam_batches, "");
+      // เรียก API พร้อมส่ง config ใหม่ (difficultyMode, bloomLevels, chapterAssignments)
+      const data = await apiService.generateExam(
+        examChapters, slug, 0, TOTAL_EXAM_BATCHES, "",
+        config.mode, config.bloom_levels, batch_chapters
+      );
 
-      // หยุด progress interval ทันที
       if (progress_interval) { clearInterval(progress_interval); progress_interval = null; }
 
       if (data && data.questions) {
-        // ===== Phase 3: ตรวจสอบและแมปผลลัพธ์ (85% → 100%) =====
         set_exam_progress(88);
         set_exam_loading_step(`ได้รับข้อสอบ ${data.questions.length} ข้อ กำลังจัดรูปแบบ...`);
         
@@ -1088,8 +1157,6 @@ export default function CoursePage() {
 
         set_exam_progress(95);
         set_exam_loading_step("จัดเตรียมข้อสอบเสร็จสมบูรณ์!");
-        
-        // หน่วงสั้นๆ เพื่อให้ผู้ใช้เห็น 100% ก่อนเปลี่ยนหน้า
         await new Promise(r => setTimeout(r, 400));
         
         set_exam_progress(100);
@@ -1111,14 +1178,26 @@ export default function CoursePage() {
     }
   };
 
-  const HandleGenerateMoreExam = async (instruction: string = "") => {
+  const HandleGenerateMoreExam = async (configParams: { mode: "general" | "difficult" | "bloom", bloom_levels: string[], instruction: string }) => {
     const chapters = exam_context_ref.current;
     if (!chapters || chapters.length === 0) return;
     
+    // อัปเดต config จากสิ่งที่ผู้ใช้เลือกใน Popup กลับเข้ามาใน ref
+    exam_config_ref.current = {
+      mode: configParams.mode,
+      bloom_levels: configParams.bloom_levels
+    };
+
     const nextBatchIdx = exam_batch_idx_ref.current + 1;
+    // ดึง chapter_assignments จากตาราง Round-Robin ที่สร้างไว้ล่วงหน้า
+    const schedule = exam_schedule_ref.current;
+    const batch_chapters = schedule[nextBatchIdx] || [];
     
     try {
-      const data = await apiService.generateExam(chapters, slug, nextBatchIdx, total_exam_batches, instruction);
+      const data = await apiService.generateExam(
+        chapters, slug, nextBatchIdx, TOTAL_EXAM_BATCHES, configParams.instruction,
+        configParams.mode, configParams.bloom_levels, batch_chapters
+      );
       if (data && data.questions) {
         const mappedBatch = data.questions.map((q: any) => ({
           question: q.question,

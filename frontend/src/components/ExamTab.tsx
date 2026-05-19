@@ -1,14 +1,29 @@
 "use client";
 
+// อินเทอร์เฟซสำหรับการตั้งค่าข้อสอบ — ใช้ค่า "general" เป็นค่าเริ่มต้นเสมอ
+export interface ExamConfig {
+  mode: "general" | "difficult" | "bloom";
+  bloom_levels: string[];
+}
+
 interface ExamTabProps {
   course_name: string;
-  OnGenerate: () => void;
-  OnMockResult?: () => void; // New optional prop for mocking
+  OnGenerate: (config: ExamConfig) => void;
+  OnMockResult?: () => void;
 }
 
 export function ExamTab({ course_name, OnGenerate, OnMockResult }: ExamTabProps) {
+  // กดปุ่มแล้วเจนข้อสอบระดับทั่วไปทันที ไม่ต้องให้ผู้ใช้เลือก
+  const HandleGenerate = () => {
+    OnGenerate({
+      mode: "general",
+      bloom_levels: [],
+    });
+  };
+
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 md:px-8 lg:px-12 pt-4 md:pt-6 pb-20 animate-fade-in-up">
+      {/* ไอคอนและหัวข้อหลัก */}
       <div className="w-20 h-20 bg-[#8c8cf3]/10 rounded-3xl flex items-center justify-center mb-8">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#8c8cf3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -27,20 +42,22 @@ export function ExamTab({ course_name, OnGenerate, OnMockResult }: ExamTabProps)
         It contains 40 multiple-choice questions designed to test your overall understanding.
       </p>
 
+      {/* ปุ่ม Generate Exam — กดแล้วเจนทันที */}
       <div className="flex flex-col sm:flex-row items-center gap-4">
         <button
-          onClick={OnGenerate}
-          className="px-10 py-4 bg-[#8c8cf3] text-white rounded-2xl font-bold text-lg hover:brightness-110 hover:scale-[1.02] active:scale-95 transition-all shadow-[0_4px_14px_-4px_rgba(140,140,243,0.4)]"
+          onClick={HandleGenerate}
+          className="px-10 py-4 bg-[#8c8cf3] text-white rounded-xl font-bold text-lg hover:brightness-110 hover:scale-[1.02] active:scale-95 transition-all shadow-[0_4px_14px_-4px_rgba(140,140,243,0.4)]"
         >
           Generate Exam
         </button>
 
+        {/* ปุ่ม Mock Result สำหรับการพัฒนา (Dev only) */}
         {OnMockResult && (
           <button
             onClick={OnMockResult}
-            className="px-10 py-4 border-2 border-[#8c8cf3]/40 text-[#8c8cf3] bg-white rounded-2xl font-bold text-lg hover:bg-[#8c8cf3]/5 active:scale-95 transition-all"
+            className="px-10 py-4 border-2 border-[#8c8cf3]/40 text-[#8c8cf3] bg-white rounded-xl font-bold text-lg hover:bg-[#8c8cf3]/5 active:scale-95 transition-all"
           >
-            Mock Exam Result
+            Mock Result
           </button>
         )}
       </div>

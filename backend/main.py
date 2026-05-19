@@ -175,10 +175,15 @@ async def invoke_with_fallback(messages, use_model=None):
         raise
 
 async def InvokeGeneration(messages):
-    """ใช้ generation_model (ring-2.6-1t) ตรงๆ ไม่มี fallback เพื่อความเร็วสูงสุด
-    ถ้าเกิด error ให้ raise ขึ้นไปจัดการที่ caller แทน
-    """
-    return await generation_model.ainvoke(messages)
+    """ใช้ generation_model เป็นหลัก หากเกิด 429 (Rate Limit) ให้พยายามใช้ fallback_model"""
+    try:
+        return await generation_model.ainvoke(messages)
+    except Exception as e:
+        error_str = str(e)
+        if "429" in error_str:
+            print(f"Rate limited on primary generation model. Try fallback: {fallback_model_name}")
+            return await fallback_model.ainvoke(messages)
+        raise
 
 async def invoke_structured_with_fallback(messages, schema):
     """Try structured output with primary model, fallback to secondary."""
@@ -244,6 +249,10 @@ class GenerateExamRequest(BaseModel):
     batchIdx: int = 0
     numBatches: int = 8
     customInstruction: Optional[str] = None
+    # === Fields ใหม่สำหรับระบบ Exam แบบคละบทและเลือกระดับความยาก ===
+    difficultyMode: Optional[str] = "general"
+    bloomLevels: Optional[List[str]] = None
+    chapterAssignments: Optional[List[str]] = None
 
 class PDFSummaryRequest(BaseModel):
     quizScores: Dict[str, Any]
@@ -605,7 +614,8 @@ Context:
 
 @app.post("/api/generate-exam")
 async def generate_exam(request: GenerateExamRequest):
-    # ตรวจสอบว่ามีการส่งบทเรียนมาหรือไม่
+    """สร้างข้อสอบ 5 ข้อต่อ batch โดยคละบทเรียนตาม chapterAssignments (Round-Robin)
+    และปรับ Bloom's Taxonomy ตาม difficultyMode ที่ผู้ใช้เลือก"""
     if not request.chapters:
         raise HTTPException(status_code=400, detail="chapters array is required")
 
@@ -613,64 +623,74 @@ async def generate_exam(request: GenerateExamRequest):
         batch_idx = request.batchIdx
         num_batches = request.numBatches
         batch_size = 5
+        difficulty_mode = request.difficultyMode or "general"
+        bloom_levels = request.bloomLevels or []
+        chapter_assignments = request.chapterAssignments or []
         
-        print(f"--- กำลังสร้างข้อสอบ BATCH {batch_idx + 1}/{num_batches} ---")
+        print(f"--- กำลังสร้างข้อสอบ BATCH {batch_idx + 1}/{num_batches} (mode={difficulty_mode}) ---")
         
-        # เตรียมรายชื่อบทเรียน
-        chapter_titles = [c.get("title", "") for c in request.chapters]
-        
-        # เลือกบทเรียนหลักสำหรับ Batch นี้
-        current_chapter_title = chapter_titles[batch_idx % len(chapter_titles)]
-        
-        # ใช้เนื้อหาเต็มจากที่หน้าเว็บส่งมาเป็นหลัก เพื่อให้อ่านครบทุกหัวข้อย่อย
-        chapter_data = next((c for c in request.chapters if c.get("title") == current_chapter_title), None)
-        context = chapter_data.get("content", "") if chapter_data else ""
-        
-        # Fallback หากไม่มีเนื้อหา ค่อยใช้ Vector Search
-        if not context or len(context.strip()) < 50:
-            context = await search_lessons_vector(current_chapter_title, limit=8, course_slug=request.courseSlug)
+        # === 1. กำหนด Bloom domains สำหรับแต่ละข้อตาม difficultyMode ===
+        if difficulty_mode == "bloom" and bloom_levels:
+            # ผู้ใช้เลือก Bloom levels เอง → วนเวียนระดับที่เลือกให้ครบ batch_size
+            target_domains = [bloom_levels[i % len(bloom_levels)] for i in range(batch_size)]
+        elif difficulty_mode == "difficult":
+            # โหมดยาก → เน้น Apply ขึ้นไป
+            hard_pool = ['Apply', 'Analyze', 'Evaluate', 'Create']
+            target_domains = [hard_pool[i % len(hard_pool)] for i in range(batch_size)]
+        else:
+            # โหมดทั่วไป → คละ Bloom ทุกระดับอย่างสมดุล
+            general_pool = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create']
+            # ใช้ batch_idx เป็น offset เพื่อให้แต่ละ batch ไม่ซ้ำรูปแบบ
+            offset = batch_idx * batch_size
+            target_domains = [general_pool[(offset + i) % len(general_pool)] for i in range(batch_size)]
 
-        # ตัด Context ที่ยาวเกินไปเพื่อลด Token
-        context = TrimContext(context)
-
-        # กำหนดสัดส่วน Bloom's Taxonomy ทั้งหมด 40 ข้อ (แบบผสมเพื่อให้กระจายทุกบทเรียน)
-        # Remember: 6, Understand: 8, Apply: 10, Analyze: 8, Evaluate: 4, Create: 4
-        bloom_distribution = [
-            'Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 
-            'Create', 'Remember', 'Understand', 'Apply', 'Analyze',
-            'Apply', 'Understand', 'Analyze', 'Remember', 'Apply',
-            'Understand', 'Analyze', 'Apply', 'Remember', 'Understand',
-            'Apply', 'Analyze', 'Evaluate', 'Create', 'Apply',
-            'Understand', 'Analyze', 'Apply', 'Remember', 'Understand',
-            'Apply', 'Analyze', 'Evaluate', 'Create', 'Apply',
-            'Understand', 'Analyze', 'Evaluate', 'Create', 'Remember'
-        ]
+        # === 2. เตรียม context จากหลายบทตาม chapterAssignments (Round-Robin) ===
+        if chapter_assignments and len(chapter_assignments) == batch_size:
+            # ใช้ chapterAssignments ที่ Frontend ส่งมา (แต่ละข้อมีบทกำกับ)
+            question_chapters = chapter_assignments
+        else:
+            # Fallback: ใช้บทเดียวตาม batchIdx (ระบบเดิม)
+            chapter_titles = [c.get("title", "") for c in request.chapters]
+            fallback_title = chapter_titles[batch_idx % len(chapter_titles)]
+            question_chapters = [fallback_title] * batch_size
         
-        # เลือก Domain สำหรับ Batch นี้ (5 ข้อ)
-        start_idx = batch_idx * batch_size
-        end_idx = start_idx + batch_size
-        target_domains = bloom_distribution[start_idx:end_idx]
+        # รวม context จากทุกบทที่ไม่ซ้ำกันใน batch นี้
+        unique_chapter_names = list(dict.fromkeys(question_chapters))  # รักษาลำดับ
+        combined_context = ""
+        for ch_title in unique_chapter_names:
+            ch_data = next((c for c in request.chapters if c.get("title") == ch_title), None)
+            if ch_data:
+                content = ch_data.get("content", "")
+                if not content or len(content.strip()) < 50:
+                    content = await search_lessons_vector(ch_title, limit=6, course_slug=request.courseSlug)
+                content = TrimContext(content)
+                combined_context += f"\n\n=== บทเรียน: {ch_title} ===\n{content}"
         
-        # หากมีคำสั่งพิเศษ (customInstruction) จากผู้ใช้ ให้นำมาเพิ่มเป็นกฎพิเศษ
+        # === 3. สร้าง Prompt ที่ระบุบทและ Bloom domain สำหรับแต่ละข้อ ===
         custom_rules = ""
         if request.customInstruction:
-            custom_rules = f"\n\nUSER REQUEST FOR THESE QUESTIONS: {request.customInstruction}\nMake sure to adjust the difficulty, focus, or style of the questions according to this request while still following the general format."
+            custom_rules = f"\n\nUSER REQUEST: {request.customInstruction}\nAdjust the difficulty, focus, or style accordingly."
+
+        # สร้างรายการกำหนดข้อ → บท + domain
+        question_specs = "\n".join([
+            f"Question {i+1}: chapter=\"{question_chapters[i]}\", domain=\"{target_domains[i]}\""
+            for i in range(batch_size)
+        ])
 
         prompt = f"""You are an expert Computer Science examiner.
-Create exactly {batch_size} multiple-choice questions based strictly on the provided context.
-Focus on the topic: {current_chapter_title}.
-CRITICAL RULE 1: You MUST ONLY use the provided Context. DO NOT use any outside knowledge.
-CRITICAL RULE 2: You MUST distribute the questions evenly across the different concepts in the context.
-CRITICAL RULE 3: Every question and option MUST be written in complete grammatical sentences (Subject + Verb + Object) to ensure maximum clarity.{custom_rules}
+Create exactly {batch_size} multiple-choice questions. Each question MUST be based on the specific chapter and cognitive domain assigned below.
+CRITICAL RULE 1: You MUST ONLY use the provided Context sections. DO NOT use any outside knowledge.
+CRITICAL RULE 2: Each question MUST come from its assigned chapter. Use the content under that chapter's section.
+CRITICAL RULE 3: Every question and option MUST be written in complete grammatical sentences.{custom_rules}
 
-Each question must strictly follow these assigned cognitive domains from Bloom's Taxonomy in order:
-{", ".join([f"Question {i+1}: {domain}" for i, domain in enumerate(target_domains)])}
+Question Assignments (chapter and Bloom's Taxonomy domain for each question):
+{question_specs}
 
 Requirements for each question:
 - exactly 4 options
 - a correctIndex (0-3)
 - the assigned domain from the list above
-- a chapterTitle: "{current_chapter_title}"
+- chapterTitle must match the assigned chapter exactly
 
 IMPORTANT:
 1. All questions and options MUST be written in Thai language.
@@ -693,20 +713,21 @@ You MUST respond ONLY with a valid JSON object:
 }}
 
 Context:
-{context}"""
+{combined_context}"""
 
-        # ตรวจสอบ Cache สำหรับ Exam Batch นี้ (ถ้ามี customInstruction ให้ข้าม Cache เพื่อเจนใหม่เสมอ)
-        cache_key = GetCacheKey("exam", current_chapter_title, context + str(batch_idx) + str(request.customInstruction or ""))
+        # ตรวจสอบ Cache (ข้าม Cache ถ้ามี customInstruction)
+        cache_key = GetCacheKey("exam", str(question_chapters), combined_context[:200] + str(batch_idx) + difficulty_mode)
         if not request.customInstruction:
             cached = GetFromCache(cache_key)
             if cached:
-                print(f"--- CACHE HIT: Exam Batch {batch_idx} [{current_chapter_title}] ---")
+                print(f"--- CACHE HIT: Exam Batch {batch_idx} [{', '.join(unique_chapter_names[:3])}...] ---")
                 return cached
 
-        # ใช้ generation_model (temperature=0) เพื่อความเร็ว
         result = await InvokeGeneration([SystemMessage(content=prompt)])
         batch_data = parse_json_from_text(result.content)
         SetCache(cache_key, batch_data)
+        
+        print(f"--- EXAM BATCH {batch_idx + 1} DONE: {len(batch_data.get('questions', []))} questions from {len(unique_chapter_names)} chapters ---")
         return batch_data
         
     except Exception as e:
@@ -825,15 +846,32 @@ async def get_user_quota(userId: str):
 
 # --- SUPABASE ROUTES ---
 
+def ExecuteWithRetry(query_builder, retries_left=3, delay_seconds=0.5, backoff_factor=2):
+    # รัน Supabase Query พร้อมกลไก Retry และ Exponential Backoff เพื่อความเสถียรของระบบ
+    last_error = None
+    for attempt in range(retries_left):
+        try:
+            return query_builder.execute()
+        except Exception as error:
+            last_error = error
+            print(f"[RETRY] Supabase query failed: {error}. Attempt {attempt + 1} of {retries_left}...")
+            if attempt < retries_left - 1:
+                time.sleep(delay_seconds)
+                delay_seconds *= backoff_factor
+    raise last_error
+
 @app.get("/api/lessons")
 async def get_lessons(course_slug: Optional[str] = None):
     try:
+        # กำหนดคำสั่งคิวรีดึงข้อมูลบทเรียนจากตาราง curriculum_content
         query = supabase.table('curriculum_content').select('*').order('chapter_number').order('id')
         if course_slug:
             query = query.eq('course_slug', course_slug)
-        response = query.execute()
+        # รันคิวรีด้วยฟังก์ชัน ExecuteWithRetry เพื่อป้องกันปัญหา Timeout หรือ Network Fluctuation
+        response = ExecuteWithRetry(query, retries_left=3, delay_seconds=0.5, backoff_factor=2)
         return response.data
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/lessons")

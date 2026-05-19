@@ -276,6 +276,18 @@ export function QuizPlayer({ questions, OnClose, userId, lessonId, onGenerateMor
   }
 
   const current_q = questions[current_idx];
+
+  // ตรวจสอบความปลอดภัยกรณีที่คำถามในตำแหน่งปัจจุบันยังไม่พร้อมใช้งาน (ป้องกัน TypeError: Cannot read properties of undefined)
+  if (!current_q) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-8 gap-4 w-full">
+        {/* แสดงผลอนิเมชันการโหลดที่เป็นมิตรกับผู้ใช้ตามมาตรฐานการออกแบบระดับพรีเมียม */}
+        <div className="w-10 h-10 border-4 border-[#8c8cf3]/20 border-t-[#8c8cf3] rounded-full animate-spin" />
+        <p className="text-sm text-gray-500 font-medium">กำลังโหลดคำถามถัดไป...</p>
+      </div>
+    );
+  }
+
   const progress = ((current_idx + 1) / questions.length) * 100;
 
   return (
