@@ -105,13 +105,33 @@ export const apiService = {
     }
   },
   
-  // 4. Exam Generation (direct to backend - takes 60-120s)
-  async generateExam(chapters: { title: string; content: string }[], courseSlug?: string, batchIdx: number = 0, numBatches: number = 8, customInstruction?: string, userId?: string) {
+  // รองรับการส่ง config ระดับความยาก, Bloom levels, และรายชื่อบทที่กำหนดสำหรับแต่ละข้อใน batch
+  async generateExam(
+    chapters: { title: string; content: string }[],
+    courseSlug?: string,
+    batchIdx: number = 0,
+    numBatches: number = 8,
+    customInstruction?: string,
+    difficultyMode?: "general" | "difficult" | "bloom",
+    bloomLevels?: string[],
+    chapterAssignments?: string[],
+    userId?: string
+  ) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate-exam`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapters, courseSlug, batchIdx, numBatches, customInstruction, userId })
+        body: JSON.stringify({
+          chapters,
+          courseSlug,
+          batchIdx,
+          numBatches,
+          customInstruction,
+          difficultyMode: difficultyMode || "general",
+          bloomLevels: bloomLevels || [],
+          chapterAssignments: chapterAssignments || [],
+          userId
+        })
       });
       if (!res.ok) throw new Error('Network response was not ok');
       return await res.json();
