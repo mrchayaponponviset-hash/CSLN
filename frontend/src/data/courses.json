@@ -488,22 +488,6 @@
       "icon": "🔴",
       "courses": [
         {
-          "code": "09-132-401",
-          "name_en": "Computer Science Project 2",
-          "name_th": "โครงงานวิทยาการคอมพิวเตอร์ 2",
-          "chapters": 7,
-          "slug": "cs-project-2",
-          "topics": [
-            "ขั้นตอนการพัฒนาเชิงลึก",
-            "Testing and Tuning",
-            "Result Analysis",
-            "Documentation (Final Report)",
-            "Handover and Ethics",
-            "Final Presentation",
-            "Publication and Archiving"
-          ]
-        },
-        {
           "code": "09-132-402",
           "name_en": "Cybersecurity",
           "name_th": "ความมั่นคงปลอดภัยไซเบอร์",
@@ -526,8 +510,8 @@
     }
   ],
   "metadata": {
-    "total_courses": 27,
-    "total_chapters": 236,
+    "total_courses": 26,
+    "total_chapters": 229,
     "curriculum": "วิทยาศาสตรบัณฑิต สาขาวิชาวิทยาการคอมพิวเตอร์ (ปรับปรุง 2569)",
     "plan": "แผนสหกิจศึกษา"
   }
