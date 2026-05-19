@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { TokenEstimator, ESTIMATED_TOKENS } from "./usage/TokenEstimator";
+import { QuotaWarningInline } from "./usage/QuotaWarningInline";
+import { useUsage } from "@/contexts/UsageContext";
 
 interface QuizTabProps {
   topics: string[];
@@ -16,6 +19,7 @@ interface QuizTabProps {
 export function QuizTab({ topics, selected_topics, OnToggle, OnGenerate }: QuizTabProps) {
   const [is_open, set_is_open] = useState(false);
   const selected_topic = selected_topics[0] || null;
+  const { canGenerate } = useUsage();
 
   // ฟังก์ชันสำหรับจัดการการกดปุ่มสร้าง Quiz
   const HandleGenerateClick = () => {
@@ -127,9 +131,11 @@ export function QuizTab({ topics, selected_topics, OnToggle, OnGenerate }: QuizT
 
       {/* Footer Action */}
       <div className="mt-8">
+        <TokenEstimator type="quiz_5" />
+        <QuotaWarningInline />
         <button
           onClick={HandleGenerateClick}
-          disabled={!selected_topic}
+          disabled={!selected_topic || !canGenerate(ESTIMATED_TOKENS.quiz_5)}
           className={`
             w-full py-4 md:py-5 rounded-lg font-bold text-lg md:text-xl transition-all duration-300
             ${selected_topic

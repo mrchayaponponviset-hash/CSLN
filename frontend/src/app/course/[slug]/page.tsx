@@ -849,8 +849,8 @@ export default function CoursePage() {
     lesson_content = TrimContent(lesson_content);
     
     try {
-      // ส่ง topic ที่เลือกไป Backend เพื่อเจน Flashcards
-      const data = await apiService.generateFlashcards(topic_name, lesson_content);
+      // Send request directly to backend (without caching to ensure fresh AI response if needed)
+      const data = await apiService.generateFlashcards(topic_name, lesson_content, user?.uid);
       
       // Map API response เข้ารูปแบบ FlashcardsPlayer
       const mappedCards = data.cards.map((c: any) => ({
@@ -930,8 +930,8 @@ export default function CoursePage() {
     quiz_context_ref.current = { topic: topic_name, content: lesson_content };
 
     try {
-      // เจน 5 ข้อแรกก่อน (numQuestions=5)
-      const data = await apiService.generateQuiz(topic_name, lesson_content, 5);
+      // Send request directly to backend (without caching to ensure fresh AI response if needed)
+      const data = await apiService.generateQuiz(topic_name, lesson_content, 5, user?.uid);
       
       const mappedQuestions = data.questions.map((q: any) => ({
         question: q.question,
@@ -963,7 +963,8 @@ export default function CoursePage() {
     const ctx = quiz_context_ref.current;
     if (!ctx) return;
     try {
-      const data = await apiService.generateQuiz(ctx.topic, ctx.content, 5);
+      // Send request directly to backend for fresh quiz with specific instructions
+      const data = await apiService.generateQuiz(ctx.topic, ctx.content, 5, user?.uid);
       const newQuestions = data.questions.map((q: any) => ({
         question: q.question,
         options: q.options,
@@ -1067,7 +1068,7 @@ export default function CoursePage() {
       }, TICK_MS);
 
       // เรียก API จริง — รอจนกว่าจะเสร็จ
-      const data = await apiService.generateExam(examChapters, slug, 0, total_exam_batches, "");
+      const data = await apiService.generateExam(examChapters, slug, 0, total_exam_batches, "", user?.uid);
 
       // หยุด progress interval ทันที
       if (progress_interval) { clearInterval(progress_interval); progress_interval = null; }
@@ -1118,7 +1119,7 @@ export default function CoursePage() {
     const nextBatchIdx = exam_batch_idx_ref.current + 1;
     
     try {
-      const data = await apiService.generateExam(chapters, slug, nextBatchIdx, total_exam_batches, instruction);
+      const data = await apiService.generateExam(chapters, slug, nextBatchIdx, total_exam_batches, instruction, user?.uid);
       if (data && data.questions) {
         const mappedBatch = data.questions.map((q: any) => ({
           question: q.question,

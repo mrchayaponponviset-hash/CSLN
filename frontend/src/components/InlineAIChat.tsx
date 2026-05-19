@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { apiService, ChatMessage } from "@/services/api";
 import { TypewriterEffect } from "./TypewriterEffect";
 import { useAuth } from "@/contexts/AuthContext";
+import { useUsage } from "@/contexts/UsageContext";
 import { AILoader } from "./AILoader";
 
 /* ===== ค่าคงที่สำหรับ Quick Prompt Chips ===== */
@@ -67,8 +68,8 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
   const [messages, setMessages] = useState<ChatMessage[]>([CreateWelcomeMessage()]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [quota, setQuota] = useState({ used: 0, limit: 100000 });
   const { user } = useAuth();
+  const { updateFromStream } = useUsage();
   const current_user_id = (user as any)?.uid || 'anonymous';
 
   /* #2 — Scroll to Bottom: ตรวจสอบว่าผู้ใช้ scroll ขึ้นไปหรือไม่ */
@@ -115,16 +116,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
     return () => container.removeEventListener('scroll', HandleScroll);
   }, []);
   
-  /* Load Quota on mount */
-  useEffect(() => {
-    const fetchQuota = async () => {
-      const data = await apiService.getUserQuota(current_user_id);
-      setQuota(data);
-    };
-    fetchQuota();
-  }, [current_user_id]);
-
-  /* Handle external prompts (e.g. from clicking keywords) */
+  /* Auto-scroll เมื่อมีข้อความใหม่ */
   useEffect(() => {
     if (externalPrompt) {
       setInput(externalPrompt);
@@ -169,7 +161,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
           try {
             const usageStr = chunk.split("__USAGE__:")[1];
             const usageData = JSON.parse(usageStr);
-            setQuota(usageData);
+            updateFromStream(usageData);
           } catch (e) {
             console.error("Failed to parse usage", e);
           }
@@ -268,7 +260,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
             try {
               const usageStr = chunk.split("__USAGE__:")[1];
               const usageData = JSON.parse(usageStr);
-              setQuota(usageData);
+              updateFromStream(usageData);
             } catch (e) {
               console.error("Failed to parse usage", e);
             }

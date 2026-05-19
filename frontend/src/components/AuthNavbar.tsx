@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
+import { UsageBadge } from "./usage/UsageBadge";
 
 interface AuthNavbarProps {
   className?: string;
@@ -23,6 +24,7 @@ export function AuthNavbar({ className = "" }: AuthNavbarProps) {
 
         {user ? (
           <div className="flex items-center gap-4">
+            <UsageBadge />
             <span className="text-sm font-medium text-[var(--color-gray-600)] hidden sm:block">
               {user.displayName || user.email}
             </span>

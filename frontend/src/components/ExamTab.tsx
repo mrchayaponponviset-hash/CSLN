@@ -1,4 +1,7 @@
 "use client";
+import { TokenEstimator, ESTIMATED_TOKENS } from "./usage/TokenEstimator";
+import { QuotaWarningInline } from "./usage/QuotaWarningInline";
+import { useUsage } from "@/contexts/UsageContext";
 
 interface ExamTabProps {
   course_name: string;
@@ -7,6 +10,7 @@ interface ExamTabProps {
 }
 
 export function ExamTab({ course_name, OnGenerate, OnMockResult }: ExamTabProps) {
+  const { canGenerate } = useUsage();
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 md:px-8 lg:px-12 pt-4 md:pt-6 pb-20 animate-fade-in-up">
       <div className="w-20 h-20 bg-[#8c8cf3]/10 rounded-3xl flex items-center justify-center mb-8">
@@ -27,9 +31,15 @@ export function ExamTab({ course_name, OnGenerate, OnMockResult }: ExamTabProps)
         It contains 40 multiple-choice questions designed to test your overall understanding.
       </p>
 
+      <div className="w-full max-w-md">
+        <TokenEstimator type="exam_batch" />
+        <QuotaWarningInline />
+      </div>
+
       <div className="flex flex-col sm:flex-row items-center gap-4">
         <button
           onClick={OnGenerate}
+          disabled={!canGenerate(ESTIMATED_TOKENS.exam_batch)}
           className="px-10 py-4 bg-[#8c8cf3] text-white rounded-2xl font-bold text-lg hover:brightness-110 hover:scale-[1.02] active:scale-95 transition-all shadow-[0_4px_14px_-4px_rgba(140,140,243,0.4)]"
         >
           Generate Exam

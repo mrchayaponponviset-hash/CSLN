@@ -17,6 +17,9 @@ export const metadata: Metadata = {
 };
 
 import { AuthProvider } from "@/contexts/AuthContext";
+import { UsageProvider } from "@/contexts/UsageContext";
+import { QuotaToast } from "@/components/usage/QuotaToast";
+import { QuotaExceededModal } from "@/components/usage/QuotaExceededModal";
 import { BackgroundAnimation } from "@/components/BackgroundAnimation";
 
 export default function RootLayout({
@@ -29,7 +32,11 @@ export default function RootLayout({
       <body className="antialiased">
         <BackgroundAnimation />
         <AuthProvider>
-          {children}
+          <UsageProvider>
+            {children}
+            <QuotaToast />
+            <QuotaExceededModal />
+          </UsageProvider>
         </AuthProvider>
       </body>
     </html>

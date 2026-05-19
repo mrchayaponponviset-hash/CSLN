@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { TokenEstimator, ESTIMATED_TOKENS } from "./usage/TokenEstimator";
+import { QuotaWarningInline } from "./usage/QuotaWarningInline";
+import { useUsage } from "@/contexts/UsageContext";
 
 interface FlashcardsTabProps {
   topics: string[];
@@ -16,6 +19,7 @@ interface FlashcardsTabProps {
 export function FlashcardsTab({ topics, selected_topics, OnToggle, OnGenerate }: FlashcardsTabProps) {
   const [is_open, set_is_open] = useState(false);
   const selected_topic = selected_topics[0] || null;
+  const { canGenerate } = useUsage();
 
   // ฟังก์ชันสำหรับจัดการการกดปุ่มสร้าง Flashcards
   const HandleGenerateClick = () => {
@@ -127,9 +131,11 @@ export function FlashcardsTab({ topics, selected_topics, OnToggle, OnGenerate }:
 
       {/* Footer Action */}
       <div className="mt-8">
+        <TokenEstimator type="flashcard" />
+        <QuotaWarningInline />
         <button
           onClick={HandleGenerateClick}
-          disabled={!selected_topic}
+          disabled={!selected_topic || !canGenerate(ESTIMATED_TOKENS.flashcard)}
           className={`
             w-full py-4 md:py-5 rounded-2xl font-bold text-lg md:text-xl transition-all duration-300
             ${selected_topic

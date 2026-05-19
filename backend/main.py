@@ -49,20 +49,37 @@ def get_all_quotas():
     return _quota_cache
 
 def update_user_quota(user_id: str, tokens_used: int):
-    """อัปเดต quota — บันทึกทั้ง in-memory cache และ Supabase"""
-    user_data = _quota_cache.get(user_id, {"used": 0, "limit": DEFAULT_MAX_TOKENS})
-    user_data["used"] += tokens_used
-    _quota_cache[user_id] = user_data
-
-    # บันทึกลง Supabase (non-blocking — ไม่ block ถ้า table ยังไม่มี)
+    """อัปเดต quota ลง Database เสมอ เพื่อความแม่นยำ 100% สำหรับเซิร์ฟเวอร์จริง"""
+    current_used = 0
+    limit_tokens = DEFAULT_MAX_TOKENS
+    
     try:
+        # 1. ดึงข้อมูลล่าสุดจาก Supabase ก่อนเสมอ
+        response = supabase.table('user_quotas').select('used, limit_tokens').eq('user_id', user_id).execute()
+        if response.data:
+            current_used = response.data[0].get("used", 0)
+            limit_tokens = response.data[0].get("limit_tokens", DEFAULT_MAX_TOKENS)
+            
+        # 2. บวก Token ที่ใช้ไป
+        new_used = current_used + tokens_used
+        
+        # 3. บันทึกค่าใหม่กลับไปที่ Supabase
         supabase.table('user_quotas').upsert({
             "user_id": user_id,
-            "used": user_data["used"],
-            "limit_tokens": user_data["limit"]
+            "used": new_used,
+            "limit_tokens": limit_tokens
         }, on_conflict="user_id").execute()
+        
+        user_data = {"used": new_used, "limit": limit_tokens}
+        _quota_cache[user_id] = user_data # อัปเดต in-memory เผื่อไว้ดึงเร็วๆ
+        return user_data
     except Exception as e:
-        print(f"Quota save to Supabase failed (non-critical): {e}")
+        print(f"Quota update to Supabase failed: {e}")
+        # Fallback to local if DB is down
+        user_data = _quota_cache.get(user_id, {"used": 0, "limit": DEFAULT_MAX_TOKENS})
+        user_data["used"] += tokens_used
+        _quota_cache[user_id] = user_data
+        return user_data
 
     return user_data
 
@@ -237,6 +254,7 @@ class GenerateRequest(BaseModel):
     chapterTitle: str
     content: Optional[str] = None
     numQuestions: int = 5  # จำนวนข้อที่ต้องการ (5 หรือ 10)
+    userId: Optional[str] = None
 
 class GenerateExamRequest(BaseModel):
     chapters: List[Dict[str, str]]
@@ -244,6 +262,7 @@ class GenerateExamRequest(BaseModel):
     batchIdx: int = 0
     numBatches: int = 8
     customInstruction: Optional[str] = None
+    userId: Optional[str] = None
 
 class PDFSummaryRequest(BaseModel):
     quizScores: Dict[str, Any]
@@ -412,6 +431,11 @@ async def chat(request: ChatRequest):
         tokens_used = 0
         if hasattr(last_message, "response_metadata"):
             tokens_used = last_message.response_metadata.get("token_usage", {}).get("total_tokens", 0)
+            
+        if tokens_used == 0:
+            input_chars = sum(len(m.content) for m in lc_messages)
+            output_chars = len(last_message.content)
+            tokens_used = max(1, (input_chars + output_chars) // 4)
         
         if tokens_used > 0:
             update_user_quota(current_user_id, tokens_used)
@@ -459,6 +483,13 @@ async def chat_stream(request: ChatRequest):
                 elif event["event"] == "on_chat_model_end":
                     usage = event["data"]["output"].response_metadata.get("token_usage", {})
                     tokens_used = usage.get("total_tokens", 0)
+                    
+                    # Fallback token estimation if provider doesn't return usage in stream
+                    if tokens_used == 0:
+                        input_chars = sum(len(m.content) for m in lc_messages)
+                        output_chars = len(full_response)
+                        tokens_used = max(1, (input_chars + output_chars) // 4)
+                        
                     if tokens_used > 0:
                         user_quota = update_user_quota(current_user_id, tokens_used)
                         # ส่งข้อมูล usage ไปที่ frontend แบบเงียบๆ (ใช้ delimiter)
@@ -515,23 +546,34 @@ Context:
             for attempt in range(2):
                 try:
                     result = await InvokeGeneration([SystemMessage(content=batch_prompt)])
-                    return parse_json_from_text(result.content).get("questions", [])
+                    questions = parse_json_from_text(result.content).get("questions", [])
+                    tokens_used = 0
+                    if hasattr(result, "response_metadata"):
+                        tokens_used = result.response_metadata.get("token_usage", {}).get("total_tokens", 0)
+                    if tokens_used == 0:
+                        tokens_used = max(1, (len(batch_prompt) + len(result.content)) // 4)
+                    return questions, tokens_used
                 except Exception as e:
                     print(f"  [Quiz Batch {batch_num}] attempt {attempt+1} failed: {e}")
                     if attempt < 1: await asyncio.sleep(1)
-            return []
+            return [], 0
 
         # 3. รันตาม numQuestions
         if num_q == 5:
             # รัน batch เดียว (เร็วกว่า ~2x)
-            all_questions = await fetch_quiz_batch(1)
+            all_questions, total_tokens = await fetch_quiz_batch(1)
         else:
             # รัน 2 batches พร้อมกัน (Parallel)
             tasks = [fetch_quiz_batch(1), fetch_quiz_batch(2)]
             results = await asyncio.gather(*tasks)
             all_questions = []
-            for batch_questions in results:
+            total_tokens = 0
+            for batch_questions, batch_tokens in results:
                 all_questions.extend(batch_questions)
+                total_tokens += batch_tokens
+            
+        if request.userId:
+            update_user_quota(request.userId, total_tokens)
             
         print(f"--- QUIZ DONE: {len(all_questions)} questions in {time.time()-start_time:.2f}s ---")
         return {"questions": all_questions}
@@ -579,20 +621,23 @@ Context:
             for attempt in range(2):
                 try:
                     result = await InvokeGeneration([SystemMessage(content=batch_prompt)])
-                    return parse_json_from_text(result.content).get("cards", [])
+                    cards = parse_json_from_text(result.content).get("cards", [])
+                    tokens_used = 0
+                    if hasattr(result, "response_metadata"):
+                        tokens_used = result.response_metadata.get("token_usage", {}).get("total_tokens", 0)
+                    if tokens_used == 0:
+                        tokens_used = max(1, (len(batch_prompt) + len(result.content)) // 4)
+                    return cards, tokens_used
                 except Exception as e:
                     print(f"  [Flashcard Batch {count}] attempt {attempt+1} failed: {e}")
                     if attempt < 1: await asyncio.sleep(1)
-            return []
+            return [], 0
 
-        # 3. รันพร้อมกัน (Parallel 3 ข้อ และ 2 ข้อ)
-        tasks = [fetch_cards_batch(3), fetch_cards_batch(2)]
-        results = await asyncio.gather(*tasks)
-        
-        # 4. รวมผลลัพธ์
-        all_cards = []
-        for batch_cards in results:
-            all_cards.extend(batch_cards)
+        # 3. รันแบบเดี่ยว 5 ข้อ รวดเดียวเพื่อหลีกเลี่ยง Rate Limit ของ API ฟรี
+        all_cards, total_tokens = await fetch_cards_batch(5)
+            
+        if request.userId:
+            update_user_quota(request.userId, total_tokens)
             
         print(f"--- FLASHCARDS DONE: {len(all_cards)} cards in {time.time()-start_time:.2f}s ---")
         return {"cards": all_cards}
@@ -707,6 +752,17 @@ Context:
         result = await InvokeGeneration([SystemMessage(content=prompt)])
         batch_data = parse_json_from_text(result.content)
         SetCache(cache_key, batch_data)
+        
+        # Calculate actual tokens
+        tokens_used = 0
+        if hasattr(result, "response_metadata"):
+            tokens_used = result.response_metadata.get("token_usage", {}).get("total_tokens", 0)
+        if tokens_used == 0:
+            tokens_used = max(1, (len(prompt) + len(result.content)) // 4)
+            
+        if request.userId:
+            update_user_quota(request.userId, tokens_used)
+            
         return batch_data
         
     except Exception as e:
@@ -819,6 +875,19 @@ async def generate_pdf(request: PDFGenerateRequest):
 
 @app.get("/api/user-quota/{userId}")
 async def get_user_quota(userId: str):
+    try:
+        # Try fetching from Supabase first
+        response = supabase.table('user_quotas').select('*').eq('user_id', userId).execute()
+        if response.data:
+            db_data = response.data[0]
+            user_data = {"used": db_data.get("used", 0), "limit": db_data.get("limit_tokens", DEFAULT_MAX_TOKENS)}
+            # Sync to in-memory cache
+            _quota_cache[userId] = user_data
+            return user_data
+    except Exception as e:
+        print(f"Failed to fetch quota from Supabase for {userId}: {e}")
+        
+    # Fallback to in-memory cache
     quotas = get_all_quotas()
     user_data = quotas.get(userId, {"used": 0, "limit": DEFAULT_MAX_TOKENS})
     return user_data

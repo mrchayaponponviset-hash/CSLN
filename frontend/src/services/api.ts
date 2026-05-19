@@ -74,12 +74,12 @@ export const apiService = {
   },
 
   // 2. Quiz Generation (direct to backend - takes 15-30s for 5q, 30-60s for 10q)
-  async generateQuiz(chapterTitle: string, content?: string, numQuestions: number = 5) {
+  async generateQuiz(chapterTitle: string, content?: string, numQuestions: number = 5, userId?: string) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate-quiz`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapterTitle, content, numQuestions })
+        body: JSON.stringify({ chapterTitle, content, numQuestions, userId })
       });
       if (!res.ok) throw new Error('Network response was not ok');
       return await res.json();
@@ -90,12 +90,12 @@ export const apiService = {
   },
 
   // 3. Flashcard Generation (direct to backend - target: 5-10s)
-  async generateFlashcards(chapterTitle: string, content?: string) {
+  async generateFlashcards(chapterTitle: string, content?: string, userId?: string) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate-flashcards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapterTitle, content })
+        body: JSON.stringify({ chapterTitle, content, userId })
       });
       if (!res.ok) throw new Error('Network response was not ok');
       return await res.json();
@@ -106,12 +106,12 @@ export const apiService = {
   },
   
   // 4. Exam Generation (direct to backend - takes 60-120s)
-  async generateExam(chapters: { title: string; content: string }[], courseSlug?: string, batchIdx: number = 0, numBatches: number = 8, customInstruction?: string) {
+  async generateExam(chapters: { title: string; content: string }[], courseSlug?: string, batchIdx: number = 0, numBatches: number = 8, customInstruction?: string, userId?: string) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate-exam`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chapters, courseSlug, batchIdx, numBatches, customInstruction })
+        body: JSON.stringify({ chapters, courseSlug, batchIdx, numBatches, customInstruction, userId })
       });
       if (!res.ok) throw new Error('Network response was not ok');
       return await res.json();
