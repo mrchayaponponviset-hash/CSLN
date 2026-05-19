@@ -856,8 +856,9 @@ async def generate_pdf(request: PDFGenerateRequest):
         }
         
         # 2. Process sections (convert markdown to HTML)
+        # เปิดใช้งาน extension 'tables' เพื่อพาร์สและจัดรูปเล่มตาราง Markdown และ 'nl2br' เพื่อเว้นบรรทัดอย่างเป็นธรรมชาติ
         for sec in request.sections:
-            html_content = markdown.markdown(sec.content)
+            html_content = markdown.markdown(sec.content, extensions=['tables', 'nl2br'])
             # สั่งขึ้นหน้าใหม่ถ้าเจอหัวข้อ "สรุปเนื้อหารายวิชา"
             is_highlights = "สรุปเนื้อหารายวิชา" in sec.title
             

@@ -254,21 +254,53 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
         });
       }
 
-      // Replace mockSummary with actual ai_analysis_text
+      // แทนที่ mockSummary ด้วยข้อความวิเคราะห์จริงที่สร้างจากระบบ AI
       const summaryText = (ai_analysis_text || "No analysis available.").trim();
-      const sectionBlocks = summaryText.split(/###\s+/).filter(Boolean);
       
-      const sections = sectionBlocks.map((block: string) => {
+      // แยกข้อความวิเคราะห์รายบทเรียนด้วย Markdown Header ทุกระดับ (เช่น #, ##, ###) เพื่อแบ่งหัวข้อใน PDF อย่างมั่นคง
+      const sectionBlocks = summaryText.split(/(?:^|\n)#+\s+/).filter(Boolean);
+      
+      let parsedSections = sectionBlocks.map((block: string) => {
         const lines = block.split('\n');
         const title = lines[0].trim();
+        // ทำความสะอาดหัวข้อโดยการตัดอักขระพิเศษของมาร์กดาวน์ เช่น เครื่องหมายสี่เหลี่ยมหรือดอกจันออก
+        const cleanTitle = title.replace(/^#+\s*/, '').replace(/\*+/g, '').trim();
         const content = lines.slice(1).join('\n').trim();
-        return { title, content };
+        return { title: cleanTitle, content };
       });
 
+      // กรองเฉพาะเซกชันที่มีเนื้อหาอยู่จริงเท่านั้น เพื่อเอาหัวข้อใหญ่ที่ว่างเปล่า (ซึ่งมีหัวข้อย่อยซ้อนอยู่ข้างใน) ออกไป ป้องกันการเปลืองบรรทัด
+      const sections = parsedSections.filter((sec: any) => sec.content && sec.content.replace(/\s+/g, '').length > 5);
+
+      // แทรกคะแนนภาพรวมของการสอบไว้ที่หน้าแรกของรายงานเล่ม PDF
       sections.unshift({
         title: "ผลคะแนนการทดสอบรวม",
         content: `ในภาพรวมของการทดสอบ คุณทำคะแนนได้ **${final_score}** จากคะแนนเต็ม **${questions.length}** คิดเป็น **${Math.round((final_score/questions.length)*100)}%**`
       });
+
+      // เพิ่มสัดส่วนระดับพฤติกรรมความเข้าใจ (Bloom's Taxonomy) เข้าไปในรายงาน PDF ตามความต้องการของผู้ใช้ในรูปแบบหลอดความก้าวหน้าเต็ม 100%
+      if (result_data?.chartData && result_data.chartData.length > 0) {
+        const data = result_data.chartData;
+        
+        // สร้างตาราง HTML ที่มีความเสถียรสูงใน WeasyPrint ปราศจากช่องบรรทัดว่างเพื่อให้ Python Markdown ไม่พาร์สผิดพลาด
+        let bloomHtmlTable = `<div style="margin-top: 15px; font-family: 'Bai Jamjuree', sans-serif;"><table style="width: 100%; border-collapse: collapse;"><tbody>`;
+        
+        for (let i = 0; i < data.length; i += 2) {
+          const item1 = data[i];
+          const item2 = data[i + 1];
+          const p1 = Math.round(item1?.A ?? 0);
+          const p2 = item2 ? Math.round(item2?.A ?? 0) : null;
+          
+          bloomHtmlTable += `<tr><td style="width: 48%; padding: 6px 0; vertical-align: middle;"><div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 10px; font-weight: bold; color: #404040;"><span>${item1?.subject}</span><span style="color: #8c8cf3;">${p1}%</span></div><div style="width: 100%; height: 8px; background-color: #E5E5E5; border-radius: 4px; overflow: hidden;"><div style="width: ${p1}%; height: 100%; background-color: #8c8cf3; border-radius: 4px;"></div></div></td><td style="width: 4%;">&nbsp;</td><td style="width: 48%; padding: 6px 0; vertical-align: middle;">${item2 ? `<div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 10px; font-weight: bold; color: #404040;"><span>${item2?.subject}</span><span style="color: #8c8cf3;">${p2}%</span></div><div style="width: 100%; height: 8px; background-color: #E5E5E5; border-radius: 4px; overflow: hidden;"><div style="width: ${p2}%; height: 100%; background-color: #8c8cf3; border-radius: 4px;"></div></div>` : '&nbsp;'}</td></tr>`;
+        }
+        
+        bloomHtmlTable += `</tbody></table></div>`;
+
+        sections.splice(1, 0, {
+          title: "ผลการประเมินระดับพฤติกรรมความเข้าใจ (Bloom's Taxonomy)",
+          content: `ระดับความเข้าใจของผู้เรียนประเมินตามกรอบทักษะ Bloom's Taxonomy แต่ละระดับความเข้าใจย่อย:\n\n${bloomHtmlTable}`
+        });
+      }
 
       const pdfBlob = await apiService.generatePdf({
         title: courseName || 'Computer Science Assessment',
@@ -444,22 +476,23 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                   </div>
                 </div>
               ) : (
-                <div className="bg-[var(--color-gray-50)] rounded-[32px] p-6 sm:p-10 border border-[var(--color-gray-100)] animate-in slide-in-from-bottom-4 duration-700">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-gray-200">
+                <div className="bg-[var(--color-gray-50)] rounded-[32px] p-6 sm:p-10 border border-[var(--color-gray-100)] shadow-sm animate-in slide-in-from-bottom-4 duration-700 flex flex-col gap-8">
+                  {/* แถวหัวข้อหลักและปุ่ม Export PDF */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-gray-200/80">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-[var(--color-primary)]/10 rounded-2xl flex items-center justify-center text-[var(--color-primary)] shrink-0">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                       </div>
                       <div>
-                        <h3 className="text-2xl font-black text-[var(--color-black)]">ผลการวิเคราะห์</h3>
-                        <p className="text-sm font-bold text-gray-500 mt-1">อิงจากรูปแบบการตอบของข้อสอบชุดนี้</p>
+                        <h3 className="text-2xl font-black text-[var(--color-black)] font-bai-jamjuree">คำแนะนำจาก AI และการวิเคราะห์รายบุคคล</h3>
+                        <p className="text-xs font-bold text-gray-500 mt-1 font-bai-jamjuree">คำแนะนำเพื่อพัฒนาทักษะและผลการวิเคราะห์ระดับพฤติกรรมความเข้าใจเฉพาะบุคคล</p>
                       </div>
                     </div>
                     
                     <button 
                       onClick={downloadPdf}
                       disabled={generatingPdf}
-                      className="shrink-0 flex items-center justify-center gap-2 bg-black text-white px-6 py-3 rounded-full text-sm font-bold hover:bg-gray-800 active:scale-95 transition-all shadow-md"
+                      className="shrink-0 flex items-center justify-center gap-2 bg-black text-white px-6 py-3 rounded-full text-sm font-bold hover:bg-gray-800 active:scale-95 transition-all shadow-md font-bai-jamjuree"
                     >
                       {generatingPdf ? (
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -469,8 +502,40 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                       <span>Export PDF</span>
                     </button>
                   </div>
-                  
-                  <div className="prose prose-sm md:prose-base prose-gray max-w-none text-[var(--color-gray-700)]">
+
+                  {/* ส่วนแสดงระดับพฤติกรรมความเข้าใจบลูม (Bloom's Taxonomy) ในรูปแบบหลอดแถบความก้าวหน้า 100% จัดรวมอยู่ในกล่องเดียวกัน */}
+                  <div className="bg-white/60 backdrop-blur-sm rounded-[24px] p-6 border border-gray-200/50">
+                    <div className="flex items-center gap-2.5 mb-5">
+                      <div className="w-8 h-8 bg-[#8c8cf3]/10 rounded-lg flex items-center justify-center text-[#8c8cf3] shrink-0">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                      </div>
+                      <h4 className="text-sm font-bold text-gray-900 leading-tight font-bai-jamjuree">Bloom's Taxonomy Performance</h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                      {result_data?.chartData?.map((item: any, idx: number) => {
+                        const percentage = Math.round(item.A ?? 0);
+                        return (
+                          <div key={idx} className="space-y-1.5 font-bai-jamjuree">
+                            <div className="flex justify-between items-center text-xs font-bold text-gray-600">
+                              <span>{item.subject}</span>
+                              <span className="text-[#8c8cf3]">{percentage}%</span>
+                            </div>
+                            {/* แถบหลอดความก้าวหน้าแสดงความเชี่ยวชาญแบบ 100% */}
+                            <div className="w-full h-2.5 bg-gray-200/50 rounded-full overflow-hidden relative">
+                              <div 
+                                className="h-full bg-gradient-to-r from-[#8c8cf3] to-[#7c7cf2] rounded-full transition-all duration-1000 ease-out"
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* ส่วนเนื้อหาคำแนะนำอย่างละเอียดวิเคราะห์โดย AI ใช้ฟอนต์ Bai Jamjuree และสไตล์ Bullet point แสนสวยสบายตา */}
+                  <div className="ai-recommendation-content text-[var(--color-gray-700)] border-t border-gray-200/60 pt-6">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {ai_analysis_text || ""}
                     </ReactMarkdown>
@@ -792,15 +857,26 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                 </button>
               </div>
 
-              {/* ปุ่ม บทถัดไป อยู่ใน lg:col-span-7 เท่ากับกล่องทางขวา */}
+              {/* ปุ่ม บทถัดไป / สรุปผลลัพธ์ด้วย AI อยู่ใน lg:col-span-7 เท่ากับกล่องทางขวา */}
               <div className="lg:col-span-7">
-                {onGenerateMore && (
+                {questions.length >= 40 ? (
+                  /* แสดงปุ่มสรุปผลลัพธ์ด้วย AI เมื่อทำข้อสอบครบ 40 ข้อเรียบร้อยแล้ว */
                   <button 
-                    onClick={() => set_show_prompt_modal(true)}
-                    className="w-full py-4 border-2 border-[#8c8cf3]/40 text-[#8c8cf3] hover:bg-[#8c8cf3]/10 active:scale-95 rounded-2xl font-bold text-[16px] transition-all flex items-center justify-center gap-2"
+                    onClick={GenerateAIAnalysis}
+                    className="w-full py-4 bg-[#8c8cf3] text-white hover:brightness-110 active:scale-95 rounded-2xl font-bold text-[16px] transition-all flex items-center justify-center gap-2 shadow-[0_4px_14px_-4px_rgba(140,140,243,0.4)]"
                   >
-                    บทถัดไป
+                    สรุปผลลัพธ์ด้วย AI
                   </button>
+                ) : (
+                  /* แสดงปุ่มบทถัดไปหากข้อสอบยังทำไม่ครบ 40 ข้อ */
+                  onGenerateMore && (
+                    <button 
+                      onClick={() => set_show_prompt_modal(true)}
+                      className="w-full py-4 border-2 border-[#8c8cf3]/40 text-[#8c8cf3] hover:bg-[#8c8cf3]/10 active:scale-95 rounded-2xl font-bold text-[16px] transition-all flex items-center justify-center gap-2"
+                    >
+                      บทถัดไป
+                    </button>
+                  )
                 )}
               </div>
             </div>

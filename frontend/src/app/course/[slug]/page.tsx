@@ -1218,8 +1218,8 @@ export default function CoursePage() {
   };
 
   const HandleMockExamResult = () => {
-    // กำหนดข้อสอบจำลองคุณภาพสูงพร้อมพฤติกรรมการเรียนรู้ของบลูม
-    const mock_questions = [
+    // กำหนดข้อสอบจำลองคุณภาพสูงเป็นข้อมูลฐานพร้อมพฤติกรรมการเรียนรู้ของบลูม
+    const base_questions = [
       {
         question: "Which of the following is a key feature of a Relational Database Management System (RDBMS)?",
         options: [
@@ -1286,6 +1286,30 @@ export default function CoursePage() {
         explanation: "While microservices provide excellent fault isolation and independent scalability, they introduce complex challenges regarding data consistency, network latency, and service orchestration."
       }
     ];
+
+    // ขยายข้อสอบจำลองให้ครบ 40 ข้อ (8 batches x 5 ข้อ) เพื่อจำลองสถานะสอบเสร็จสิ้น
+    const mock_questions: any[] = [];
+    const domains = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
+    const chapters = [
+      "Database Systems", 
+      "Computer Architecture", 
+      "Software Development", 
+      "Data Structures & Algorithms", 
+      "System Architecture",
+      "Information Security",
+      "Operating Systems",
+      "Computer Networks"
+    ];
+
+    for (let i = 0; i < 40; i++) {
+      const base = base_questions[i % base_questions.length];
+      mock_questions.push({
+        ...base,
+        question: `[ข้อที่ ${i + 1}] ${base.question}`,
+        domain: domains[i % domains.length],
+        chapterTitle: chapters[Math.floor(i / 5) % chapters.length],
+      });
+    }
 
     set_exam_questions(mock_questions);
     set_is_mock_result(true);
