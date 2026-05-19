@@ -3,9 +3,10 @@
 interface ExamTabProps {
   course_name: string;
   OnGenerate: () => void;
+  OnMockResult?: () => void; // New optional prop for mocking
 }
 
-export function ExamTab({ course_name, OnGenerate }: ExamTabProps) {
+export function ExamTab({ course_name, OnGenerate, OnMockResult }: ExamTabProps) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 md:px-8 lg:px-12 pt-4 md:pt-6 pb-20 animate-fade-in-up">
       <div className="w-20 h-20 bg-[#8c8cf3]/10 rounded-3xl flex items-center justify-center mb-8">
@@ -26,12 +27,23 @@ export function ExamTab({ course_name, OnGenerate }: ExamTabProps) {
         It contains 40 multiple-choice questions designed to test your overall understanding.
       </p>
 
-      <button
-        onClick={OnGenerate}
-        className="px-12 py-5 bg-[#8c8cf3] text-white rounded-2xl font-bold text-xl hover:brightness-110 hover:scale-[1.02] active:scale-95 transition-all"
-      >
-        Generate Exam
-      </button>
+      <div className="flex flex-col sm:flex-row items-center gap-4">
+        <button
+          onClick={OnGenerate}
+          className="px-10 py-4 bg-[#8c8cf3] text-white rounded-2xl font-bold text-lg hover:brightness-110 hover:scale-[1.02] active:scale-95 transition-all shadow-[0_4px_14px_-4px_rgba(140,140,243,0.4)]"
+        >
+          Generate Exam
+        </button>
+
+        {OnMockResult && (
+          <button
+            onClick={OnMockResult}
+            className="px-10 py-4 border-2 border-[#8c8cf3]/40 text-[#8c8cf3] bg-white rounded-2xl font-bold text-lg hover:bg-[#8c8cf3]/5 active:scale-95 transition-all"
+          >
+            Mock Exam Result
+          </button>
+        )}
+      </div>
     </div>
   );
 }

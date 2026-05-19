@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { apiService, ChatMessage } from "@/services/api";
 import { TypewriterEffect } from "./TypewriterEffect";
+import { AILoader } from "./AILoader";
 
 export function AIChatPanel() {
   const pathname = usePathname();
@@ -134,10 +135,8 @@ export function AIChatPanel() {
                     ? msg.content 
                     : (
                       <div className="flex gap-4 items-start">
-                        <div className="w-9 h-9 flex items-center justify-center shrink-0 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 shadow-[0_4px_12px_rgba(0,0,0,0.1)] mt-0.5">
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M12 3C12 7.97056 7.97056 12 3 12C7.97056 12 12 16.0294 12 21C12 16.0294 16.0294 12 21 12C16.0294 12 12 7.97056 12 3Z" fill="white" />
-                          </svg>
+                        <div className="w-9 h-9 flex items-center justify-center shrink-0 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 shadow-[0_4px_12px_rgba(0,0,0,0.1)] mt-0.5 overflow-hidden">
+                          <AILoader isThinking={isLoading} size={0.35} />
                         </div>
                         <div className="assistant-message-dark pt-1 flex-1 pr-0 sm:pr-[52px]">
                           <TypewriterEffect text={msg.content} animate={msg.animate} />
@@ -162,10 +161,11 @@ export function AIChatPanel() {
         </div>
 
         {/* Input Area Area */}
-        <div className="p-6 border-t border-white/10 shrink-0 bg-black/10 backdrop-blur-md">
+        <div className="pb-10 pt-6 px-6 border-t border-white/10 shrink-0 bg-transparent">
+          {/* ปรับปรุงแอนิเมชั่นระดับพรีเมียม: เพิ่มเอฟเฟกต์เรืองแสง (Focus Glow Effect) สำหรับ Chat Panel ใน Dark Mode */}
           <form 
             onSubmit={handleSendMessage}
-            className="flex items-end gap-3 bg-white/5 border border-white/20 rounded-xl p-2 focus-within:border-[var(--color-primary)] focus-within:bg-white/10 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.2)] relative"
+            className="flex items-end gap-3 bg-white/5 border border-white/20 rounded-xl p-2 focus-within:border-[var(--color-primary)] focus-within:bg-white/10 focus-within:shadow-[0_0_20px_rgba(177,178,255,0.3)] transition-all relative"
           >
             <textarea
               value={input}

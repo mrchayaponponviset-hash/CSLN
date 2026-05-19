@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { apiService, ChatMessage } from "@/services/api";
 import { TypewriterEffect } from "./TypewriterEffect";
 import { useAuth } from "@/contexts/AuthContext";
+import { AILoader } from "./AILoader";
 
 /* ===== ค่าคงที่สำหรับ Quick Prompt Chips ===== */
 const QUICK_PROMPTS = [
@@ -325,7 +326,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 relative overflow-hidden bg-black/5">
+      <div className={`flex-1 relative overflow-hidden ${has_sent_message ? 'bg-black/5' : 'bg-transparent'}`}>
         {/* กล่องสีม่วงทับลูกศร Scrollbar */}
         <div className="absolute top-0 right-0 w-[14px] h-[12px] bg-[#8c8cf3] z-10 pointer-events-none" />
         <div className="absolute bottom-0 right-0 w-[14px] h-[12px] bg-[#8c8cf3] z-10 pointer-events-none" />
@@ -346,14 +347,16 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
 
         <div 
           ref={messages_container_ref}
-          className="h-full overflow-y-auto premium-scrollbar px-5 py-6 flex flex-col gap-6 relative z-0"
+          className={`h-full overflow-y-auto premium-scrollbar px-5 py-6 flex flex-col gap-6 relative z-0 transition-all duration-700 ${has_sent_message ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12 pointer-events-none'}`}
         >
           {messages.map((msg, idx) => {
             /* ซ่อน AI message ที่ยังไม่มีเนื้อหา */
             if (msg.role === 'assistant' && !msg.content) return null;
+            /* ซ่อนข้อความต้อนรับในลิสต์ถ้าเราโชว์ในหน้า Greeting แล้ว */
+            if (idx === 0) return null;
           
             return (
-              <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
                 <div 
                   className={`text-[13.5px] leading-[1.6] ${
                     msg.role === 'user' 
@@ -366,17 +369,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
                     : (
                       <div className="flex gap-4 items-start">
                         <div className="w-9 h-9 flex items-center justify-center shrink-0 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 shadow-[0_4px_12px_rgba(0,0,0,0.1)] mt-0.5 overflow-hidden">
-                          <div className="circle-loader">
-                            <div className="circle circle1"></div>
-                            <div className="circle circle2"></div>
-                            <div className="circle circle3"></div>
-                            <div className="circle circle4"></div>
-                            <div className="circle circle5"></div>
-                            <div className="circle circle6"></div>
-                            <div className="circle circle7"></div>
-                            <div className="circle circle8"></div>
-                            <div className="circle circle9"></div>
-                          </div>
+                          <AILoader isThinking={isLoading} size={0.35} />
                         </div>
                         <div className="assistant-message-dark pt-2 flex-1 min-w-0 overflow-hidden pr-0 sm:pr-[52px]">
                           <TypewriterEffect text={msg.content} animate={msg.animate} />
@@ -415,17 +408,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
             <div className="flex justify-start animate-fade-in-up py-2">
               <div className="flex gap-4 items-center">
                 <div className="w-9 h-9 flex items-center justify-center shrink-0 rounded-full bg-white/5 backdrop-blur-sm border border-white/10 overflow-hidden">
-                  <div className="circle-loader is-thinking scale-75">
-                    <div className="circle circle1"></div>
-                    <div className="circle circle2"></div>
-                    <div className="circle circle3"></div>
-                    <div className="circle circle4"></div>
-                    <div className="circle circle5"></div>
-                    <div className="circle circle6"></div>
-                    <div className="circle circle7"></div>
-                    <div className="circle circle8"></div>
-                    <div className="circle circle9"></div>
-                  </div>
+                  <AILoader isThinking={true} size={0.35} />
                 </div>
                 <span className="text-[12px] text-white/40 font-medium tracking-wide">Thinking....</span>
               </div>
@@ -433,67 +416,110 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
           )}
           <div ref={messagesEndRef} />
         </div>
+
+        {/* Greeting State (แสดงตรงกลางจอใหญ่ๆ ตามรูปภาพ) */}
+        {!has_sent_message && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-8 z-10 transition-all duration-700">
+            <div className="mb-16 transform transition-all duration-1000 hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center">
+              <AILoader isThinking={true} size={3.15} />
+            </div>
+            <div className="text-center space-y-8 max-w-2xl animate-fade-in">
+              <h3 className="text-4xl font-black text-white/90 tracking-tighter uppercase drop-shadow-2xl">
+                {courseName}
+              </h3>
+              <div className="text-white/60 text-[15px] leading-relaxed font-medium px-6">
+                <TypewriterEffect 
+                  text={`สวัสดีครับ! มีข้อสงสัยไหนในวิชา ${courseName} ที่อยากให้ผมช่วยอธิบายเพิ่มเติมไหมครับ?`} 
+                  animate={true} 
+                />
+              </div>
+              
+              {/* Quick Prompt Chips (ย้ายไปจัดวางใต้ฟอร์มกรอกข้อความใน Input Area แล้ว) */}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* #1 — Quick Prompt Chips (แสดงเฉพาะตอนยังไม่เคยส่งข้อความ) */}
-      {!has_sent_message && !isLoading && (
-        <div className="px-5 pb-2 pt-3 shrink-0 bg-white/5 border-t border-white/10">
-          <div className="flex flex-wrap gap-2">
-            {QUICK_PROMPTS.map((item, idx) => (
-              <button
-                key={idx}
-                onClick={() => HandleQuickPrompt(item.prompt)}
-                className="text-[11.5px] font-medium text-white/60 hover:text-white bg-white/[0.07] hover:bg-white/[0.15] border border-white/10 hover:border-white/20 rounded-full px-3.5 py-1.5 transition-all duration-200"
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Quick Prompt Chips (ย้ายไปรวมใน Greeting แล้ว) */}
 
-      {/* Input Area */}
-      <div className={`px-6 pb-6 ${has_sent_message || isLoading ? 'pt-3 border-t border-white/10' : 'pt-2'} shrink-0 bg-white/5`}>
-        <form 
-          onSubmit={HandleSendMessage}
-          className="flex items-end gap-2 bg-[var(--color-gray-50)] border border-[var(--color-gray-300)] focus-within:border-[var(--color-primary)] focus-within:bg-white rounded-[24px] p-1.5 transition-all duration-200 shadow-[0_4px_15px_rgba(0,0,0,0.05)]"
-        >
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                HandleSendMessage(e);
-              }
-            }}
-            placeholder="ถามโจทย์ หรือให้อธิบายเนื้อหา..."
-            className="flex-1 max-h-48 min-h-[44px] bg-transparent border-none outline-none focus:outline-none focus:ring-0 resize-none px-4 py-3 text-[14px] leading-relaxed text-[var(--color-black)] placeholder:text-[var(--color-gray-400)] no-scrollbar"
-            rows={1}
-          />
-          
-          <div className="flex items-center pr-1 pb-0.5">
-            <button 
-              type={isLoading ? "button" : "submit"}
-              onClick={isLoading ? HandleStopGeneration : undefined}
-              disabled={!input.trim() && !isLoading}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
-                (input.trim() || isLoading)
-                ? 'bg-[var(--color-primary)] text-white hover:scale-105 shadow-sm' 
-                : 'bg-transparent text-[var(--color-gray-300)]'
-              }`}
+      {/* Input Area - ยกระดับขึ้น 70px ให้พอดีสมมาตรลอยพ้นขอบล่าง 100% โดยไม่สูงเกินไป (Symmetrical 70px) และสไลด์ลงล่างเมื่อส่งข้อความ */}
+      {/* ขั้นตอนการปรับปรุงแอนิเมชั่น: เอาเส้นขอบด้านบนและ pt-3 ออกเพื่อแก้ปัญหา "เส้นดำๆ" ที่เกิดจากการแปลงสีและเลย์เอาต์ */}
+      {/* เพิ่มเติมระดับพรีเมียม: ใช้ cubic-bezier(0.16, 1, 0.3, 1) (Ease Out Expo) และ will-change เพื่อเร่งประสิทธิภาพของ GPU ให้แอนิเมชั่นสไลด์ลื่นไหล 100% ไร้รอยต่อ */}
+      {/* ปรับระยะขอบแนวตั้งจาก pb-6 pt-2 เป็น py-4 เพื่อให้กล่องข้อความจัดวางอยู่กึ่งกลางแนวตั้งของแถบด้านล่างอย่างสมมาตรเมื่อแชทเลื่อนลงมา */}
+      <div 
+        className="py-4 shrink-0 bg-transparent"
+        style={{
+          transform: !has_sent_message && !isLoading ? 'translateY(-70px)' : 'translateY(0)',
+          transition: 'transform 800ms cubic-bezier(0.16, 1, 0.3, 1)',
+          willChange: 'transform'
+        }}
+      >
+        <div className="w-full flex flex-col items-center">
+          {/* กล่องข้อความกรอกคำถาม - ปรับลดความกว้างสูงสุดให้เท่ากับความกว้างของกลุ่มชุดคำแนะนำด้านล่าง (Pixel-Perfect max-w-[480px]) */}
+          <div className="w-full max-w-[480px] px-6 mx-auto">
+            {/* ปรับปรุงแอนิเมชั่นระดับพรีเมียม: เพิ่มเอฟเฟกต์เรืองแสง (Focus Glow Effect) สีม่วงนุ่มนวลรอบกล่องข้อความเมื่อมีการโฟกัสพิมพ์คำถาม */}
+            <form 
+              onSubmit={HandleSendMessage}
+              className={`flex items-end gap-2 bg-[var(--color-gray-50)] border border-[var(--color-gray-300)] focus-within:border-[var(--color-primary)] focus-within:bg-white focus-within:shadow-[0_0_25px_rgba(177,178,255,0.45)] rounded-[24px] p-1.5 transition-all duration-500 w-full ${!has_sent_message ? 'scale-105' : ''}`}
             >
-              {isLoading ? (
-                <div className="w-4 h-4 bg-white rounded-sm animate-pulse" title="Stop generation" />
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={input.trim() ? "mr-0.5 mt-0.5" : ""}>
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-              )}
-            </button>
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    HandleSendMessage(e);
+                  }
+                }}
+                placeholder="ถามโจทย์ หรือให้อธิบายเนื้อหา..."
+                className="flex-1 max-h-48 min-h-[44px] bg-transparent border-none outline-none focus:outline-none focus:ring-0 resize-none px-4 py-3 text-[14px] leading-relaxed text-[var(--color-black)] placeholder:text-[var(--color-gray-400)] no-scrollbar"
+                rows={1}
+              />
+              
+              <div className="flex items-center pr-1 pb-0.5">
+                <button 
+                  type={isLoading ? "button" : "submit"}
+                  onClick={isLoading ? HandleStopGeneration : undefined}
+                  disabled={!input.trim() && !isLoading}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
+                    (input.trim() || isLoading)
+                    ? 'bg-[var(--color-primary)] text-white hover:scale-105 shadow-sm' 
+                    : 'bg-transparent text-[var(--color-gray-300)]'
+                  }`}
+                >
+                  {isLoading ? (
+                    <div className="w-4 h-4 bg-white rounded-sm animate-pulse" title="Stop generation" />
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={input.trim() ? "mr-0.5 mt-0.5" : ""}>
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
-        </form>
+
+          {/* ปรับปรุงชุดคำแนะนำ (Quick Prompt Chips) ด้านล่างช่องกรอกข้อความ:
+              1. ปรับขนาดความกว้างสูงสุดของคอนเทนเนอร์ให้เท่ากับช่องกรอกที่ max-w-[480px] เพื่อความสมมาตร 100%
+              2. ลด Padding ของปุ่มเป็น px-3 py-1.5 เพื่อให้ชุดปุ่มทั้งหมดเรียงตัวเป็นแถวเดียวพอดีในกรอบ 480px อย่างสวยงาม
+              3. ปรับการจัดระยะห่างตัวอักษรภาษาไทยจาก tracking-widest เป็น tracking-wide เพื่อความสวยงามพรีเมียม
+              4. ปรับเปลี่ยนชื่อตัวแปรในการวนลูปให้อยู่ในรูปแบบ snake_case ตามมาตรฐานของระบบอย่างเคร่งครัด */}
+          {!isLoading && !has_sent_message && (
+            <div className="w-full max-w-[480px] overflow-x-auto no-scrollbar flex flex-nowrap justify-start sm:justify-center gap-1.5 mt-4 px-6 py-3 animate-fade-in mx-auto" style={{ animationDelay: '0.4s' }}>
+              {QUICK_PROMPTS.map((quick_prompt_item, prompt_idx) => (
+                <button
+                  key={prompt_idx}
+                  type="button"
+                  onClick={() => HandleQuickPrompt(quick_prompt_item.prompt)}
+                  className="text-[11px] font-extrabold text-white/50 hover:text-white bg-white/[0.04] hover:bg-white/[0.12] border border-white/5 hover:border-white/20 rounded-full px-3 py-1.5 transition-all duration-300 uppercase tracking-wide shadow-sm active:scale-95 shrink-0 whitespace-nowrap"
+                >
+                  {quick_prompt_item.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
