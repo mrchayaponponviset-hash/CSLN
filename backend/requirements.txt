@@ -12,3 +12,5 @@ weasyprint
 jinja2
 markdown
 requests
+cryptography
+httpx

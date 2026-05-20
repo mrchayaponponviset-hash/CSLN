@@ -4,7 +4,7 @@ import json
 import traceback
 import hashlib
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -28,6 +28,12 @@ import asyncio
 
 from retriever import get_retriever, get_full_syllabus, get_subject_section, search_lessons_vector
 from supabase_client import supabase
+from byok import (
+    verify_openrouter_key, save_user_key, get_user_byok_status,
+    remove_user_key, update_user_verified, update_user_active_model,
+    get_models_for_user, resolve_api_key, resolve_model_name,
+    create_user_model, translate_openrouter_error, AVAILABLE_MODELS,
+)
 
 load_dotenv()
 
@@ -53,12 +59,22 @@ def update_user_quota(user_id: str, tokens_used: int):
     current_used = 0
     limit_tokens = DEFAULT_MAX_TOKENS
     
+    # เวลาท้องถิ่นประเทศไทย (UTC+7)
+    thai_time = datetime.now(timezone.utc) + timedelta(hours=7)
+    today_str = thai_time.strftime("%Y-%m-%d")
+    
     try:
         # 1. ดึงข้อมูลล่าสุดจาก Supabase ก่อนเสมอ
-        response = supabase.table('user_quotas').select('used, limit_tokens').eq('user_id', user_id).execute()
+        response = supabase.table('user_quotas').select('used, limit_tokens, last_reset_date').eq('user_id', user_id).execute()
         if response.data:
-            current_used = response.data[0].get("used", 0)
-            limit_tokens = response.data[0].get("limit_tokens", DEFAULT_MAX_TOKENS)
+            db_data = response.data[0]
+            current_used = db_data.get("used", 0)
+            limit_tokens = db_data.get("limit_tokens", DEFAULT_MAX_TOKENS)
+            last_reset_date = db_data.get("last_reset_date")
+            
+            # ถ้าข้ามวันแล้ว (ขึ้นวันใหม่) ให้รีเซ็ต Token กลับเป็น 0
+            if last_reset_date != today_str:
+                current_used = 0
             
         # 2. บวก Token ที่ใช้ไป
         new_used = current_used + tokens_used
@@ -67,7 +83,8 @@ def update_user_quota(user_id: str, tokens_used: int):
         supabase.table('user_quotas').upsert({
             "user_id": user_id,
             "used": new_used,
-            "limit_tokens": limit_tokens
+            "limit_tokens": limit_tokens,
+            "last_reset_date": today_str
         }, on_conflict="user_id").execute()
         
         user_data = {"used": new_used, "limit": limit_tokens}
@@ -177,39 +194,67 @@ def TrimContext(content: str) -> str:
         trimmed = trimmed[:last_period + 1]
     return trimmed + "\n[...เนื้อหาถูกตัดย่อเพื่อประสิทธิภาพ...]"
 
-async def invoke_with_fallback(messages, use_model=None):
+async def invoke_with_fallback(messages, use_model=None, user_id=None):
     """Try primary model first, fallback to secondary if it fails."""
-    m = use_model or model
+    is_byok = False
+    if user_id:
+        m, is_byok = create_user_model(user_id, purpose="chat")
+    else:
+        m = use_model or model
+        
     try:
         return await m.ainvoke(messages)
     except Exception as e:
         error_str = str(e)
         print(f"Primary model error: {error_str[:150]}")
+        # If user uses BYOK and gets 401/402, throw directly without fallback
+        if is_byok and any(err in error_str for err in ["401", "402"]):
+            raise HTTPException(status_code=400, detail=translate_openrouter_error(int(error_str[:3]) if error_str[:3].isdigit() else 401))
+            
         # Fallback for common API errors or library internal errors (like TypeError)
         if any(err in error_str for err in ["404", "429", "503", "NoneType", "iterable"]):
             print(f"--- TRYING FALLBACK MODEL: {fallback_model_name} ---")
             return await fallback_model.ainvoke(messages)
         raise
 
-async def InvokeGeneration(messages):
+async def InvokeGeneration(messages, user_id=None):
     """ใช้ generation_model เป็นหลัก หากเกิด 429 (Rate Limit) ให้พยายามใช้ fallback_model"""
+    is_byok = False
+    if user_id:
+        gen_m, is_byok = create_user_model(user_id, purpose="generation", temperature=0.3, max_tokens=2000)
+    else:
+        gen_m = generation_model
+        
     try:
-        return await generation_model.ainvoke(messages)
+        return await gen_m.ainvoke(messages)
     except Exception as e:
         error_str = str(e)
+        if is_byok and any(err in error_str for err in ["401", "402"]):
+            raise HTTPException(status_code=400, detail=translate_openrouter_error(int(error_str[:3]) if error_str[:3].isdigit() else 401))
+            
         if "429" in error_str:
             print(f"Rate limited on primary generation model. Try fallback: {fallback_model_name}")
             return await fallback_model.ainvoke(messages)
         raise
 
-async def invoke_structured_with_fallback(messages, schema):
+async def invoke_structured_with_fallback(messages, schema, user_id=None):
     """Try structured output with primary model, fallback to secondary."""
+    is_byok = False
+    if user_id:
+        m, is_byok = create_user_model(user_id, purpose="chat")
+    else:
+        m = model
+        
     try:
-        structured = model.with_structured_output(schema)
+        structured = m.with_structured_output(schema)
         return await structured.ainvoke(messages)
     except Exception as e:
         error_str = str(e)
         print(f"Structured model error: {error_str[:150]}")
+        
+        if is_byok and any(err in error_str for err in ["401", "402"]):
+            raise HTTPException(status_code=400, detail=translate_openrouter_error(int(error_str[:3]) if error_str[:3].isdigit() else 401))
+            
         if any(err in error_str for err in ["404", "429", "503", "NoneType", "iterable"]):
             print(f"--- TRYING STRUCTURED FALLBACK: {fallback_model_name} ---")
             structured_fb = fallback_model.with_structured_output(schema)
@@ -276,6 +321,7 @@ class PDFSummaryRequest(BaseModel):
     quizScores: Dict[str, Any]
     examResults: Dict[str, Any]
     radarScores: List[Any]
+    userId: Optional[str] = None
 
 class LessonRequest(BaseModel):
     title: str
@@ -312,6 +358,21 @@ class PDFGenerateRequest(BaseModel):
     chartImage: Optional[str] = None
     footerText: Optional[str] = "CSL AI Learning Dashboard - รายงานอัตโนมัติ"
 
+# --- BYOK Schemas ---
+class BYOKSaveRequest(BaseModel):
+    userId: str
+    apiKey: str
+
+class BYOKVerifyRequest(BaseModel):
+    apiKey: str
+
+class BYOKRemoveRequest(BaseModel):
+    userId: str
+
+class BYOKSetModelRequest(BaseModel):
+    userId: str
+    modelId: str
+
 # Pydantic Schemas for LLM Structured Output
 class QuizQuestion(BaseModel):
     question: str = Field(description="The text of the question")
@@ -347,6 +408,7 @@ class _AgentStateRequired(TypedDict):
 
 class AgentState(_AgentStateRequired, total=False):
     current_lesson: Optional[str]
+    user_id: Optional[str]
 
 # 4. Load syllabus once at startup
 _syllabus_context = get_full_syllabus()
@@ -387,7 +449,8 @@ async def generate_node(state: AgentState):
 === จบข้อมูลประกอบ ==="""
 
     messages = [SystemMessage(content=system_prompt)] + clean_messages
-    response = await invoke_with_fallback(messages)
+    user_id = state.get('user_id')
+    response = await invoke_with_fallback(messages, user_id=user_id)
     return {"messages": [response]}
 
 # 6. Assemble the Graph
@@ -427,7 +490,8 @@ async def chat(request: ChatRequest):
         result = await app_graph.ainvoke({
             "messages": lc_messages, 
             "context": "",
-            "current_lesson": request.currentLesson
+            "current_lesson": request.currentLesson,
+            "user_id": request.userId
         })
         
         last_message = result["messages"][-1]
@@ -480,7 +544,8 @@ async def chat_stream(request: ChatRequest):
             input_state = {
                 "messages": lc_messages, 
                 "context": "",
-                "current_lesson": request.currentLesson
+                "current_lesson": request.currentLesson,
+                "user_id": request.userId
             }
             async for event in app_graph.astream_events(input_state, version="v2"):
                 if event["event"] == "on_chat_model_stream":
@@ -553,7 +618,7 @@ Context:
             
             for attempt in range(2):
                 try:
-                    result = await InvokeGeneration([SystemMessage(content=batch_prompt)])
+                    result = await InvokeGeneration([SystemMessage(content=batch_prompt)], user_id=request.userId)
                     questions = parse_json_from_text(result.content).get("questions", [])
                     tokens_used = 0
                     if hasattr(result, "response_metadata"):
@@ -628,7 +693,7 @@ Context:
             
             for attempt in range(2):
                 try:
-                    result = await InvokeGeneration([SystemMessage(content=batch_prompt)])
+                    result = await InvokeGeneration([SystemMessage(content=batch_prompt)], user_id=request.userId)
                     cards = parse_json_from_text(result.content).get("cards", [])
                     tokens_used = 0
                     if hasattr(result, "response_metadata"):
@@ -767,7 +832,7 @@ Context:
                 print(f"--- CACHE HIT: Exam Batch {batch_idx} [{', '.join(unique_chapter_names[:3])}...] ---")
                 return cached
 
-        result = await InvokeGeneration([SystemMessage(content=prompt)])
+        result = await InvokeGeneration([SystemMessage(content=prompt)], user_id=request.userId)
         batch_data = parse_json_from_text(result.content)
         SetCache(cache_key, batch_data)
         # Calculate actual tokens
@@ -829,7 +894,7 @@ Structure:
 Respond ONLY with the Markdown Thai text. Do not include any emojis or conversational filler."""
 
 
-        response = await invoke_with_fallback([SystemMessage(content=prompt)])
+        response = await invoke_with_fallback([SystemMessage(content=prompt)], user_id=request.userId)
         return {"summary": response.content}
         
     except Exception as e:
@@ -894,12 +959,32 @@ async def generate_pdf(request: PDFGenerateRequest):
 
 @app.get("/api/user-quota/{userId}")
 async def get_user_quota(userId: str):
+    thai_time = datetime.now(timezone.utc) + timedelta(hours=7)
+    today_str = thai_time.strftime("%Y-%m-%d")
+    
     try:
         # Try fetching from Supabase first
         response = supabase.table('user_quotas').select('*').eq('user_id', userId).execute()
         if response.data:
             db_data = response.data[0]
-            user_data = {"used": db_data.get("used", 0), "limit": db_data.get("limit_tokens", DEFAULT_MAX_TOKENS)}
+            used = db_data.get("used", 0)
+            limit_tokens = db_data.get("limit_tokens", DEFAULT_MAX_TOKENS)
+            last_reset_date = db_data.get("last_reset_date")
+            
+            if last_reset_date != today_str:
+                used = 0
+                # บันทึกค่า 0 กลับลงฐานข้อมูลทันทีเมื่อพบว่าข้ามวันแล้ว
+                try:
+                    supabase.table('user_quotas').upsert({
+                        "user_id": userId,
+                        "used": 0,
+                        "limit_tokens": limit_tokens,
+                        "last_reset_date": today_str
+                    }, on_conflict="user_id").execute()
+                except Exception as db_err:
+                    print(f"Failed to reset quota in DB for {userId}: {db_err}")
+                
+            user_data = {"used": used, "limit": limit_tokens}
             # Sync to in-memory cache
             _quota_cache[userId] = user_data
             return user_data
@@ -1017,6 +1102,78 @@ async def save_exam_result(request: SaveExamResultRequest):
         return {"message": "Exam result saved successfully", "data": response.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ================================================================
+# BYOK (Bring Your Own Key) API Endpoints
+# ================================================================
+
+@app.post("/api/byok/verify")
+async def byok_verify(request: BYOKVerifyRequest):
+    """ทดสอบ API Key โดยยิง request ไปที่ OpenRouter"""
+    if not request.apiKey or len(request.apiKey.strip()) < 10:
+        raise HTTPException(status_code=400, detail="API Key ไม่ถูกต้อง")
+    result = await verify_openrouter_key(request.apiKey.strip())
+    return result
+
+
+@app.post("/api/byok/save")
+async def byok_save(request: BYOKSaveRequest):
+    """เข้ารหัสและบันทึก API Key ลง Supabase"""
+    if not request.userId:
+        raise HTTPException(status_code=400, detail="userId is required")
+    if not request.apiKey or len(request.apiKey.strip()) < 10:
+        raise HTTPException(status_code=400, detail="API Key ไม่ถูกต้อง")
+    result = save_user_key(request.userId, request.apiKey.strip())
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Failed to save key"))
+    # Mark as verified if we saved successfully
+    update_user_verified(request.userId, True)
+    result["is_verified"] = True
+    return result
+
+
+@app.get("/api/byok/status/{userId}")
+async def byok_status(userId: str):
+    """ดึงสถานะ BYOK ของ user (ไม่ส่ง key กลับ — ส่งแค่ masked)"""
+    return get_user_byok_status(userId)
+
+
+@app.post("/api/byok/remove")
+async def byok_remove(request: BYOKRemoveRequest):
+    """ลบ API Key ของ user"""
+    if not request.userId:
+        raise HTTPException(status_code=400, detail="userId is required")
+    return remove_user_key(request.userId)
+
+
+@app.get("/api/byok/models/{userId}")
+async def byok_models(userId: str):
+    """ดึงรายชื่อ models ที่ user ใช้ได้ (ตาม BYOK status)"""
+    status = get_user_byok_status(userId)
+    models = get_models_for_user(status["has_key"])
+    return {
+        "models": models,
+        "active_model": status.get("active_model", "free-chat"),
+        "has_byok": status["has_key"],
+    }
+
+
+@app.post("/api/byok/set-model")
+async def byok_set_model(request: BYOKSetModelRequest):
+    """เปลี่ยน active model ของ user"""
+    if not request.userId:
+        raise HTTPException(status_code=400, detail="userId is required")
+    # ตรวจสอบว่า model ที่เลือกต้องการ BYOK หรือไม่
+    model_info = AVAILABLE_MODELS.get(request.modelId)
+    if not model_info:
+        raise HTTPException(status_code=400, detail=f"Unknown model: {request.modelId}")
+    if model_info["requires_byok"]:
+        status = get_user_byok_status(request.userId)
+        if not status["has_key"]:
+            raise HTTPException(status_code=403, detail="ต้องเพิ่ม API Key ก่อนถึงจะใช้ Premium Model ได้")
+    return update_user_active_model(request.userId, request.modelId)
+
 
 if __name__ == "__main__":
     import uvicorn
