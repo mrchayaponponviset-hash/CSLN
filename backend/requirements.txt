@@ -12,5 +12,7 @@ weasyprint
 jinja2
 markdown
 requests
+cryptography
+httpx
 pypdf
 python-multipart

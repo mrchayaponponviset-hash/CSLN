@@ -308,5 +308,101 @@ export const apiService = {
       console.error('Error in getUserQuota:', error);
       return { used: 0, limit: 100000 };
     }
+  },
+
+  // ============================================================
+  // 12. BYOK (Bring Your Own Key) APIs
+  // ============================================================
+
+  /** ทดสอบ API Key โดยยิง request ไป OpenRouter ผ่าน backend */
+  async verifyByokKey(apiKey: string) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/byok/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey })
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('Error in verifyByokKey:', error);
+      return { valid: false, message: 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้' };
+    }
+  },
+
+  /** เข้ารหัสและบันทึก API Key ลง Database */
+  async saveByokKey(userId: string, apiKey: string) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/byok/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, apiKey })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        return { success: false, error: err.detail || 'Failed to save key' };
+      }
+      return await res.json();
+    } catch (error) {
+      console.error('Error in saveByokKey:', error);
+      return { success: false, error: 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้' };
+    }
+  },
+
+  /** ดึงสถานะ BYOK ของ user (has_key, masked_key, is_verified, active_model) */
+  async getByokStatus(userId: string) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/byok/status/${userId}`);
+      if (!res.ok) throw new Error('Failed to fetch BYOK status');
+      return await res.json();
+    } catch (error) {
+      console.error('Error in getByokStatus:', error);
+      return { has_key: false, masked_key: null, is_verified: false, active_model: 'free-chat' };
+    }
+  },
+
+  /** ลบ API Key ของ user */
+  async removeByokKey(userId: string) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/byok/remove`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('Error in removeByokKey:', error);
+      return { success: false };
+    }
+  },
+
+  /** ดึงรายชื่อ models ที่ user ใช้ได้ */
+  async getByokModels(userId: string) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/byok/models/${userId}`);
+      if (!res.ok) throw new Error('Failed to fetch models');
+      return await res.json();
+    } catch (error) {
+      console.error('Error in getByokModels:', error);
+      return { models: [], active_model: 'free-chat', has_byok: false };
+    }
+  },
+
+  /** เปลี่ยน active model */
+  async setByokModel(userId: string, modelId: string) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/byok/set-model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, modelId })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        return { success: false, error: err.detail || 'Failed to set model' };
+      }
+      return await res.json();
+    } catch (error) {
+      console.error('Error in setByokModel:', error);
+      return { success: false, error: 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้' };
+    }
   }
 };
