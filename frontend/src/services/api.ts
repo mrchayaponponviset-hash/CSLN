@@ -160,7 +160,7 @@ export const apiService = {
   // 6. Supabase - Get Lessons
   async getLessons(courseSlug?: string) {
     try {
-      const url = courseSlug ? `${BACKEND_URL}/api/lessons?course_slug=${courseSlug}` : `${BACKEND_URL}/api/lessons`;
+      const url = courseSlug ? `${BACKEND_URL}/api/lessons?course_slug=${encodeURIComponent(courseSlug)}` : `${BACKEND_URL}/api/lessons`;
       const res = await fetch(url);
       if (!res.ok) throw new Error('Failed to fetch lessons');
       return await res.json();
@@ -188,7 +188,7 @@ export const apiService = {
 
   async getUserProgress(userId: string, retries = 3) {
     if (!userId) return [];
-    const url = `${BACKEND_URL}/api/user-progress/${userId}`;
+    const url = `${BACKEND_URL}/api/user-progress/${encodeURIComponent(userId)}`;
     
     for (let i = 0; i < retries; i++) {
       try {
@@ -272,11 +272,37 @@ export const apiService = {
     }
   },
   
+  // 12. สกัดข้อความจากไฟล์ PDF โดยส่งไปยัง Backend
+  async extractPdfText(file: File): Promise<{ text: string }> {
+    try {
+      const form_data = new FormData();
+      form_data.append('file', file);
+
+      const res = await fetch(`${BACKEND_URL}/api/pdf/extract`, {
+        method: 'POST',
+        body: form_data,
+      });
+
+      if (!res.ok) {
+        const error_data = await res.json().catch(() => ({ detail: 'เกิดข้อผิดพลาดในการดึงข้อความจาก PDF' }));
+        throw new Error(error_data.detail || 'เกิดข้อผิดพลาดในการดึงข้อความจาก PDF');
+      }
+
+      return await res.json();
+    } catch (error) {
+      console.error('Error in extractPdfText:', error);
+      throw error;
+    }
+  },
+  
   // 11. Token Quota
   async getUserQuota(userId: string) {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/user-quota/${userId}`);
-      if (!res.ok) throw new Error('Failed to fetch user quota');
+      const res = await fetch(`${BACKEND_URL}/api/user-quota/${encodeURIComponent(userId)}`);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Failed to fetch user quota (Status: ${res.status} ${res.statusText}) ${errText}`);
+      }
       return await res.json();
     } catch (error) {
       console.error('Error in getUserQuota:', error);

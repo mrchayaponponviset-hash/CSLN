@@ -5,7 +5,7 @@ import traceback
 import hashlib
 import time
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 import operator
 import io
 import markdown
+import pypdf
 from jinja2 import Environment, FileSystemLoader
 # WeasyPrint ต้อง GTK — ใช้ lazy import ในฟังก์ชัน generate_pdf แทน
 # from weasyprint import HTML, CSS
@@ -265,6 +266,7 @@ class GenerateExamRequest(BaseModel):
     chapters: List[Dict[str, str]]
     courseSlug: Optional[str] = None
     batchIdx: int = 0
+    numBatches: int = 8
     customInstruction: Optional[str] = None
     userId: Optional[str] = None
     # === Fields ใหม่สำหรับระบบ Exam แบบคละบทและเลือกระดับความยาก ===
@@ -414,6 +416,55 @@ def convert_messages(messages: List[Message]) -> List[BaseMessage]:
 
 
 # --- API Routes ---
+
+# --- API Route: สกัดข้อความจากไฟล์ PDF แบบ In-Memory ---
+@app.post("/api/pdf/extract")
+async def extract_pdf(file: UploadFile = File(...)):
+    """
+    สกัดข้อความภาษาไทยและอังกฤษจากไฟล์ PDF ในหน่วยความจำชั่วคราว (In-Memory)
+    ข้อสำคัญ: รองรับการสกัดข้อความในภาษาไทยอย่างถูกต้อง ปลอดภัย และมีขีดจำกัดขนาดไฟล์ไม่เกิน 10MB
+    """
+    # 1. ตรวจสอบประเภทไฟล์
+    if not file.filename.endswith('.pdf') and file.content_type != 'application/pdf':
+        raise HTTPException(status_code=400, detail="กรุณาอัปโหลดไฟล์รูปแบบ PDF เท่านั้น")
+
+    try:
+        # 2. อ่านไฟล์ในรูปแบบ bytes เข้าสู่หน่วยความจำ
+        pdf_bytes = await file.read()
+        
+        # 3. จำกัดขนาดไฟล์ไม่เกิน 10MB เพื่อความปลอดภัยของหน่วยความจำเซิร์ฟเวอร์
+        if len(pdf_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="ขนาดไฟล์ PDF ต้องไม่เกิน 10MB")
+            
+        # 4. ใช้ BytesIO และ pypdf ในการสกัดคำ
+        import pypdf
+        pdf_file = io.BytesIO(pdf_bytes)
+        reader = pypdf.PdfReader(pdf_file)
+        
+        extracted_text = []
+        for index, page in enumerate(reader.pages):
+            text = page.extract_text()
+            if text:
+                extracted_text.append(f"--- หน้าที่ {index + 1} ---\n{text}")
+                
+        # 5. ดึงข้อความรวม
+        full_text = "\n\n".join(extracted_text).strip()
+        
+        if not full_text:
+            raise HTTPException(
+                status_code=400, 
+                detail="ไม่พบข้อความในไฟล์ PDF นี้ (ไฟล์อาจเป็นสแกนรูปภาพ หรือไม่มีเลเยอร์ข้อความดิจิทัล)"
+            )
+            
+        return {"text": full_text}
+        
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as e:
+        print("PDF Extract Error:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการดึงข้อมูลจาก PDF: {str(e)}")
+
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
@@ -891,6 +942,54 @@ async def generate_pdf(request: PDFGenerateRequest):
         print("PDF Generation Error:", e)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/pdf/extract")
+async def extract_pdf_text(file: UploadFile = File(...)):
+    """
+    สกัดข้อความภาษาไทยและอังกฤษจากไฟล์ PDF แบบ In-Memory ปลอดภัยสูง
+    พร้อมระบบป้องกันด้านความปลอดภัยและการตรวจสอบโครงสร้างไฟล์
+    """
+    # 1. ตรวจสอบประเภทไฟล์เบื้องต้น
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="กรุณาอัปโหลดไฟล์ที่มีนามสกุล .pdf เท่านั้น")
+    
+    # 2. ตรวจสอบขนาดไฟล์เพื่อความปลอดภัย (จำกัด 10MB)
+    max_file_size = 10 * 1024 * 1024  # 10 MB
+    try:
+        file_content = await file.read()
+        if len(file_content) > max_file_size:
+            raise HTTPException(status_code=400, detail="ขนาดไฟล์ PDF ต้องไม่เกิน 10MB เพื่อความรวดเร็วและปลอดภัย")
+        
+        # 3. ประมวลผล PDF แบบ In-Memory โดยใช้ pypdf
+        pdf_stream = io.BytesIO(file_content)
+        pdf_reader = pypdf.PdfReader(pdf_stream)
+        
+        extracted_text_list = []
+        # สแกนทีละหน้าและสกัดคำ
+        for page_num in range(len(pdf_reader.pages)):
+            page = pdf_reader.pages[page_num]
+            page_text = page.extract_text()
+            if page_text:
+                extracted_text_list.append(page_text.strip())
+        
+        extracted_text = "\n".join(extracted_text_list).strip()
+        
+        # 4. ป้องกันปัญหาสแกนไฟล์เปล่าหรือสแกนรูปภาพที่ไม่มีข้อความดิบ (เช่น PDF Scanned)
+        if not extracted_text:
+            raise HTTPException(
+                status_code=400, 
+                detail="ไม่พบข้อความในไฟล์ PDF นี้ (ไฟล์อาจเป็นแบบรูปภาพสแกนที่ไม่มีเลเยอร์ข้อความ หรือไฟล์ว่างเปล่า) กรุณาลองใช้ไฟล์ PDF อื่นครับ"
+            )
+        
+        # ส่งคืนข้อความที่สกัดได้
+        return {"text": extracted_text}
+        
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as exc:
+        print(f"Error extracting PDF text: {exc}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="ไม่สามารถอ่านหรือวิเคราะห์ไฟล์ PDF นี้ได้ กรุณาตรวจสอบว่าไฟล์ไม่เสียหาย")
 
 @app.get("/api/user-quota/{userId}")
 async def get_user_quota(userId: str):

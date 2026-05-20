@@ -860,10 +860,10 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
               {/* ปุ่ม บทถัดไป / สรุปผลลัพธ์ด้วย AI อยู่ใน lg:col-span-7 เท่ากับกล่องทางขวา */}
               <div className="lg:col-span-7">
                 {questions.length >= 40 ? (
-                  /* แสดงปุ่มสรุปผลลัพธ์ด้วย AI เมื่อทำข้อสอบครบ 40 ข้อเรียบร้อยแล้ว */
+                  /* เปลี่ยนสไตล์เป็นปุ่ม Secondary Button (มีเส้นขอบและตัวอักษรสีม่วง) ตามความต้องการของผู้ใช้ เพื่อไม่ให้แย่งความเด่นจากปุ่มหลัก */
                   <button 
                     onClick={GenerateAIAnalysis}
-                    className="w-full py-4 bg-[#8c8cf3] text-white hover:brightness-110 active:scale-95 rounded-2xl font-bold text-[16px] transition-all flex items-center justify-center gap-2 shadow-[0_4px_14px_-4px_rgba(140,140,243,0.4)]"
+                    className="w-full py-4 border-2 border-[#8c8cf3]/40 text-[#8c8cf3] hover:bg-[#8c8cf3]/10 active:scale-95 rounded-2xl font-bold text-[16px] transition-all flex items-center justify-center gap-2"
                   >
                     สรุปผลลัพธ์ด้วย AI
                   </button>
