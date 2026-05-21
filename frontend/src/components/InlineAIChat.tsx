@@ -323,7 +323,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
         const lastIndex = updated.length - 1;
         updated[lastIndex] = {
           ...updated[lastIndex],
-          content: updated[lastIndex].content + "\n\n*(ขออภัยครับ เกิดข้อผิดพลาดในการเชื่อมต่อกับเซิร์ฟเวอร์)*"
+          content: updated[lastIndex].content + "\n\n*(ขออภัยครับ เกิดข้อผิดพลาด: " + (error instanceof Error ? error.message : "เชื่อมต่อกับเซิร์ฟเวอร์ไม่ได้") + ")*"
         };
         return updated;
       });
@@ -413,7 +413,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
             setMessages(p => {
               const u = [...p];
               const li = u.length - 1;
-              u[li] = { ...u[li], content: u[li].content + "\n\n*(ขออภัยครับ เกิดข้อผิดพลาด)*" };
+              u[li] = { ...u[li], content: u[li].content + "\n\n*(ขออภัยครับ เกิดข้อผิดพลาด: " + (error instanceof Error ? error.message : "เชื่อมต่อกับเซิร์ฟเวอร์ไม่ได้") + ")*" };
               return u;
             });
           }

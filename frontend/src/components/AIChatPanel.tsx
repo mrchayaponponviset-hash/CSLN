@@ -62,7 +62,7 @@ export function AIChatPanel() {
         const lastIndex = updated.length - 1;
         updated[lastIndex] = {
           ...updated[lastIndex],
-          content: updated[lastIndex].content + "\n\n*(ขออภัยครับ เกิดข้อผิดพลาดในการเชื่อมต่อกับเซิร์ฟเวอร์ กรุณาลองใหม่อีกครั้ง)*"
+          content: updated[lastIndex].content + "\n\n*(ขออภัยครับ เกิดข้อผิดพลาด: " + (error instanceof Error ? error.message : "เชื่อมต่อกับเซิร์ฟเวอร์ไม่ได้") + ")*"
         };
         return updated;
       });

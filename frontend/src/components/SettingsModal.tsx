@@ -15,6 +15,49 @@ interface ModelInfo {
   locked: boolean;
 }
 
+const DEFAULT_MODELS: ModelInfo[] = [
+  {
+    id: "free-chat",
+    label: "GPT OSS 120B (Free)",
+    tier: "free",
+    description: "โมเดลฟรีสำหรับแชทและถามตอบทั่วไป",
+    requires_byok: false,
+    locked: false,
+  },
+  {
+    id: "gpt-4o",
+    label: "GPT-4o",
+    tier: "premium",
+    description: "โมเดลระดับสูงจาก OpenAI — ฉลาดและเร็ว",
+    requires_byok: true,
+    locked: true,
+  },
+  {
+    id: "gpt-4o-mini",
+    label: "GPT-4o Mini",
+    tier: "premium",
+    description: "GPT-4o ขนาดเล็ก — ประหยัดกว่าแต่ยังฉลาด",
+    requires_byok: true,
+    locked: true,
+  },
+  {
+    id: "claude-sonnet",
+    label: "Claude Sonnet 4",
+    tier: "premium",
+    description: "โมเดลจาก Anthropic — เก่งเรื่องการวิเคราะห์",
+    requires_byok: true,
+    locked: true,
+  },
+  {
+    id: "gemini-pro",
+    label: "Gemini 2.5 Pro",
+    tier: "premium",
+    description: "โมเดลจาก Google — รองรับ context ยาวมาก",
+    requires_byok: true,
+    locked: true,
+  }
+];
+
 interface ByokStatus {
   has_key: boolean;
   masked_key: string | null;
@@ -39,9 +82,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     is_verified: false,
     active_model: "free-chat",
   });
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [models, setModels] = useState<ModelInfo[]>(DEFAULT_MODELS);
   const [activeModel, setActiveModel] = useState("free-chat");
   const [loading, setLoading] = useState(false);
+  const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [verifying, setVerifying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -67,6 +111,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       /* ignore */
     }
     setLoading(false);
+    setIsFirstLoad(false);
   }, [user?.uid]);
 
   useEffect(() => {
@@ -197,26 +242,27 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
         {/* Body — Scrollable */}
         <div className="px-8 py-6 max-h-[65vh] overflow-y-auto premium-scrollbar space-y-6">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="w-8 h-8 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
+          {/* === Section 1: API Key Management === */}
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="text-sm font-bold text-[var(--color-black)] tracking-tight">
+                OpenRouter API Key
+              </h3>
+              {!isFirstLoad && status.has_key && status.is_verified && (
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-700 tracking-wide">
+                  VERIFIED
+                </span>
+              )}
+              {loading && !isFirstLoad && (
+                <div className="w-3 h-3 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin ml-2" />
+              )}
             </div>
-          ) : (
-            <>
-              {/* === Section 1: API Key Management === */}
-              <section>
-                <div className="flex items-center gap-2 mb-3">
-                  <h3 className="text-sm font-bold text-[var(--color-black)] tracking-tight">
-                    OpenRouter API Key
-                  </h3>
-                  {status.has_key && status.is_verified && (
-                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-700 tracking-wide">
-                      VERIFIED
-                    </span>
-                  )}
-                </div>
 
-                {status.has_key ? (
+            {isFirstLoad ? (
+              <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3 h-[116px] flex items-center justify-center">
+                <div className="w-6 h-6 border-2 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : status.has_key ? (
                   /* Key is already saved */
                   <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
                     <div className="flex items-center justify-between">
@@ -335,13 +381,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       <button
                         key={m.id}
                         onClick={() => handleSelectModel(m.id)}
+                        disabled={isFirstLoad || isProcessing}
                         className={`w-full text-left px-4 py-3 rounded-2xl border transition-all group ${
                           isActive
                             ? "border-[var(--color-primary)] bg-[#B1B2FF]/10 shadow-sm"
                             : isLocked
                             ? "border-gray-200 bg-gray-50 opacity-70 hover:border-red-200 hover:bg-red-50/50"
                             : "border-gray-200 bg-white hover:border-[var(--color-primary)] hover:bg-[#B1B2FF]/5"
-                        }`}
+                        } disabled:opacity-70 disabled:cursor-wait`}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
@@ -401,9 +448,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   </p>
                 </div>
               )}
-            </>
-          )}
-
           {/* === Status Message === */}
           {message && (
             <div

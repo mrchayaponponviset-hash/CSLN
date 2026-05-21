@@ -25,7 +25,10 @@ export const apiService = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages, userId })
       });
-      if (!res.ok) throw new Error('Network response was not ok');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.error || 'Network response was not ok');
+      }
       return await res.json();
     } catch (error) {
       console.error('Error in sendChatMessage:', error);
@@ -43,7 +46,10 @@ export const apiService = {
         signal
       });
       
-      if (!res.ok) throw new Error('Network response was not ok');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.error || 'Network response was not ok');
+      }
       if (!res.body) throw new Error('ReadableStream not supported');
       
       const reader = res.body.getReader();
@@ -81,7 +87,10 @@ export const apiService = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chapterTitle, content, numQuestions, userId })
       });
-      if (!res.ok) throw new Error('Network response was not ok');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.error || 'Network response was not ok');
+      }
       return await res.json();
     } catch (error) {
       console.error('Error in generateQuiz:', error);
@@ -97,7 +106,10 @@ export const apiService = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chapterTitle, content, userId })
       });
-      if (!res.ok) throw new Error('Network response was not ok');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.error || 'Network response was not ok');
+      }
       return await res.json();
     } catch (error) {
       console.error('Error in generateFlashcards:', error);
@@ -133,7 +145,10 @@ export const apiService = {
           userId
         })
       });
-      if (!res.ok) throw new Error('Network response was not ok');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.error || 'Network response was not ok');
+      }
       return await res.json();
     } catch (error) {
       console.error('Error in generateExam:', error);

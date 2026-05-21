@@ -921,7 +921,7 @@ export default function CoursePage() {
       set_is_viewing_flashcards(true);
     } catch (error) {
       console.error("Failed to generate flashcards:", error);
-      alert("เกิดข้อผิดพลาดในการสร้าง Flashcards");
+      alert(error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการสร้าง Flashcards");
     } finally {
       // ล้าง interval ทันที — ลด delay จาก 800ms เป็น 200ms
       clearInterval(loadingInterval);
@@ -1004,7 +1004,7 @@ export default function CoursePage() {
       }, 500);
     } catch (error) {
       console.error("Failed to generate quiz:", error);
-      alert("เกิดข้อผิดพลาดในการสร้างข้อสอบ");
+      alert(error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการสร้างข้อสอบ");
     } finally {
       setTimeout(() => {
         clearInterval(loadingInterval);
@@ -1032,7 +1032,7 @@ export default function CoursePage() {
       set_quiz_questions(prev => [...prev, ...newQuestions]);
     } catch (error) {
       console.error("Failed to generate more quiz questions:", error);
-      alert("เกิดข้อผิดพลาดในการสร้างข้อเพิ่มเติม");
+      alert(error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการสร้างข้อเพิ่มเติม");
       throw error; // ส่งต่อเพื่อให้ QuizPlayer รู้ว่า failed
     }
   };
@@ -1168,7 +1168,7 @@ export default function CoursePage() {
 
     } catch (error) {
       console.error("Failed to generate exam:", error);
-      alert("เกิดข้อผิดพลาดในการสร้างข้อสอบจำลอง");
+      alert(error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการสร้างข้อสอบจำลอง");
     } finally {
       if (progress_interval) clearInterval(progress_interval);
       setTimeout(() => {
@@ -1212,7 +1212,7 @@ export default function CoursePage() {
       }
     } catch (error) {
       console.error("Failed to generate more exam questions:", error);
-      alert("เกิดข้อผิดพลาดในการสร้างข้อสอบเพิ่มเติม");
+      alert(error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการสร้างข้อสอบเพิ่มเติม");
       throw error;
     }
   };

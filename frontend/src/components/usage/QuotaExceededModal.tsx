@@ -32,8 +32,9 @@ export function QuotaExceededModal() {
           </h2>
           
           <p className="text-gray-500 text-[15px] leading-relaxed mb-6">
-            You've reached your token limit of <strong className="text-gray-700">{usage.limit.toLocaleString()}</strong> for this period. 
-            AI generation is temporarily disabled.
+            คุณใช้งานครบโควต้า <strong className="text-gray-700">{usage.limit.toLocaleString()}</strong> โทเคนสำหรับรอบนี้แล้ว 
+            ฟีเจอร์ AI จะหยุดทำงานชั่วคราว<br/><br/>
+            คุณสามารถรอจนกว่าโควต้าจะรีเซ็ต หรือ <strong>ใส่ API Key ของคุณเองที่หน้าตั้งค่า (ฟันเฟือง)</strong> เพื่อใช้งานต่อได้ทันที
           </p>
           
           <div className="w-full bg-gray-50 border border-gray-100 rounded-2xl p-4 mb-6">
