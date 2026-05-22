@@ -735,9 +735,6 @@ export default function CoursePage() {
   // เก็บ config ที่ผู้ใช้เลือก (mode + bloom_levels) เพื่อใช้ซ้ำตอน Generate More
   const exam_config_ref = React.useRef<ExamConfig>({ mode: "general", bloom_levels: [] });
   
-  // สำหรับการทดสอบและทำ Mockup หน้าผลสอบโดยตรง
-  const [is_mock_result, set_is_mock_result] = useState(false);
-
   // ฟังก์ชันช่วยเหลือสำหรับ Retry Logic พร้อม Exponential Backoff ตามมาตรฐาน Coding Standard
   async function FetchWithRetry<T>(
     fn: () => Promise<T>,
@@ -1217,105 +1214,6 @@ export default function CoursePage() {
     }
   };
 
-  const HandleMockExamResult = () => {
-    // กำหนดข้อสอบจำลองคุณภาพสูงเป็นข้อมูลฐานพร้อมพฤติกรรมการเรียนรู้ของบลูม
-    const base_questions = [
-      {
-        question: "Which of the following is a key feature of a Relational Database Management System (RDBMS)?",
-        options: [
-          "Data stored in flat text files with no structured relationships",
-          "Data organized into tables with rows and columns using schema definitions",
-          "Data stored exclusively as unstructured binary large objects (BLOBs)",
-          "Data accessed only via custom hardware interfaces"
-        ],
-        correct_answer: 1,
-        domain: "Understand",
-        chapterTitle: "Database Systems",
-        explanation: "An RDBMS organizes data into structured tables consisting of rows and columns, enforcing relationships using keys (primary and foreign keys)."
-      },
-      {
-        question: "What is the primary function of the CPU's Control Unit?",
-        options: [
-          "To perform arithmetic calculations like data manipulation and storage",
-          "To permanently store user data and system files",
-          "To fetch, decode, and execute instructions from memory",
-          "To manage network connectivity and external data transfer"
-        ],
-        correct_answer: 2,
-        domain: "Remember",
-        chapterTitle: "Computer Architecture",
-        explanation: "The Control Unit (CU) coordinates the activities of the CPU by fetching, decoding, and directing the execution of instructions."
-      },
-      {
-        question: "In object-oriented programming, what is Polymorphism?",
-        options: [
-          "The ability of different classes to respond to the same message or method call in their own way",
-          "The process of restricting direct access to some of the object's components",
-          "The practice of creating multiple instances of the same class",
-          "The mechanism of copying all attributes from a parent class to a child class without changes"
-        ],
-        correct_answer: 0,
-        domain: "Apply",
-        chapterTitle: "Software Development",
-        explanation: "Polymorphism allows objects of different classes to be treated as objects of a common superclass, reacting differently to the same method name."
-      },
-      {
-        question: "Analyze the time complexity of the binary search algorithm. What is its worst-case complexity?",
-        options: [
-          "O(1)",
-          "O(N)",
-          "O(N log N)",
-          "O(log N)"
-        ],
-        correct_answer: 3,
-        domain: "Analyze",
-        chapterTitle: "Data Structures & Algorithms",
-        explanation: "Binary search divides the search space in half with each step, yielding a worst-case time complexity of logarithmic time, or O(log N)."
-      },
-      {
-        question: "Evaluate the design of a microservices architecture. Which of the following is a primary trade-off compared to a monolith?",
-        options: [
-          "Microservices are always simpler to deploy and monitor",
-          "Microservices introduce distributed system complexity and network overhead in exchange for independent scalability",
-          "Microservices completely eliminate the need for databases",
-          "Microservices guarantee absolute data consistency across all services by default"
-        ],
-        correct_answer: 1,
-        domain: "Evaluate",
-        chapterTitle: "System Architecture",
-        explanation: "While microservices provide excellent fault isolation and independent scalability, they introduce complex challenges regarding data consistency, network latency, and service orchestration."
-      }
-    ];
-
-    // ขยายข้อสอบจำลองให้ครบ 40 ข้อ (8 batches x 5 ข้อ) เพื่อจำลองสถานะสอบเสร็จสิ้น
-    const mock_questions: any[] = [];
-    const domains = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
-    const chapters = [
-      "Database Systems", 
-      "Computer Architecture", 
-      "Software Development", 
-      "Data Structures & Algorithms", 
-      "System Architecture",
-      "Information Security",
-      "Operating Systems",
-      "Computer Networks"
-    ];
-
-    for (let i = 0; i < 40; i++) {
-      const base = base_questions[i % base_questions.length];
-      mock_questions.push({
-        ...base,
-        question: `[ข้อที่ ${i + 1}] ${base.question}`,
-        domain: domains[i % domains.length],
-        chapterTitle: chapters[Math.floor(i / 5) % chapters.length],
-      });
-    }
-
-    set_exam_questions(mock_questions);
-    set_is_mock_result(true);
-    set_is_viewing_exam(true);
-  };
-
   return (
     <>
       {/* 1. Center Content Column */}
@@ -1326,7 +1224,7 @@ export default function CoursePage() {
             <div className="text-[9px] md:text-[10px] font-bold tracking-[0.2em] text-[var(--color-gray-400)] uppercase mb-1.5 md:mb-2">
               Course Module • {course.code}
             </div>
-            <h1 className="text-xl md:text-2xl lg:text-4xl font-bold text-[var(--color-primary)] tracking-tight leading-[1.2]">
+            <h1 className="text-xl md:text-2xl lg:text-4xl font-bold font-english text-[var(--color-primary)] tracking-tight leading-[1.2]">
               {course.name_en}
             </h1>
           </div>
@@ -1469,17 +1367,14 @@ export default function CoursePage() {
                         userId={user?.uid}
                         OnClose={() => {
                           set_is_viewing_exam(false);
-                          set_is_mock_result(false);
                         }} 
                         onGenerateMore={HandleGenerateMoreExam}
-                        initialIsSubmitted={is_mock_result}
                       />
                     </div>
                     <div className={!is_generating_exam && !is_viewing_exam ? "block h-full relative" : "hidden"}>
                       <ExamTab 
                         course_name={course.name_en}
                         OnGenerate={HandleGenerateExam}
-                        OnMockResult={HandleMockExamResult}
                       />
 
                     </div>

@@ -1,25 +1,26 @@
-@import url('https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+Thai:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* ===== Google Fonts Import ===== */
+/* เราเปลี่ยนไปโหลดผ่าน next/font/google ใน layout.tsx แทนแล้ว เพื่อความเสถียร 100% ใน Next.js และหลีกเลี่ยงปัญหา CORS เวลาสร้าง PDF */
 @import "tailwindcss";
 
 /* AGGRESSIVE SCROLLBAR FIX - NO ARROWS EVER */
 *::-webkit-scrollbar-button,
 ::-webkit-scrollbar-button,
-.premium-scrollbar::-webkit-scrollbar-button,
-.custom-scrollbar::-webkit-scrollbar-button {
+::-webkit-scrollbar-track-piece:start,
+::-webkit-scrollbar-track-piece:end {
   display: none !important;
   width: 0 !important;
   height: 0 !important;
-  visibility: hidden !important;
-}
-
-*::-webkit-scrollbar-track,
-::-webkit-scrollbar-track {
   background: transparent !important;
 }
 
 @theme {
   --color-primary: #B1B2FF;
   --color-primary-dark: #9293FF;
+
+  /* ใช้ CSS variables ที่มาจาก next/font/google ใน layout.tsx */
+  --font-sans: var(--font-jetbrains-mono), var(--font-inter), var(--font-noto-sans-thai), sans-serif;
+  --font-mono: var(--font-jetbrains-mono), monospace;
+  --font-bai-jamjuree: var(--font-bai-jamjuree), var(--font-noto-sans-thai), sans-serif;
 }
 
 /* Global pointer cursor for interactive elements */
@@ -32,13 +33,27 @@ label {
   cursor: pointer;
 }
 
-/* ===== Bai Jamjuree typography styles for AI Personal Recommendation ===== */
-.font-bai-jamjuree {
-  font-family: 'Bai Jamjuree', sans-serif !important;
+
+
+/* ===== ฟอนต์หลักของเว็บไซต์ ===== */
+/* JetBrains Mono แสดงตัวอักษรอังกฤษ/ตัวเลข, Noto Sans Thai แสดงตัวอักษรไทยอัตโนมัติ */
+html {
+  font-family: var(--font-sans);
 }
 
+/* คลาสเสริม: บังคับใช้ Bai Jamjuree เฉพาะจุด (เช่น ส่วน AI Recommendation) */
+.font-bai-jamjuree {
+  font-family: var(--font-bai-jamjuree) !important;
+}
+
+/* คลาสเสริม: บังคับใช้ JetBrains Mono สำหรับข้อความอังกฤษ/ตัวเลขเฉพาะจุด */
+.font-english {
+  font-family: var(--font-mono) !important;
+}
+
+/* ===== ฟอนต์เฉพาะจุด: ส่วน AI Recommendation ใช้ Bai Jamjuree เพื่อฟีลลิ่งตำราวิชาการ ===== */
 .ai-recommendation-content {
-  font-family: 'Bai Jamjuree', sans-serif !important;
+  font-family: var(--font-bai-jamjuree) !important;
   line-height: 1.85 !important;
   color: var(--color-gray-700) !important;
 }
@@ -47,7 +62,7 @@ label {
 .ai-recommendation-content h2,
 .ai-recommendation-content h3,
 .ai-recommendation-content h4 {
-  font-family: 'Bai Jamjuree', sans-serif !important;
+  font-family: 'Bai Jamjuree', 'Noto Sans Thai', sans-serif !important;
   font-weight: 700 !important;
   color: var(--color-black) !important;
   margin-top: 1.75rem !important;
@@ -89,7 +104,7 @@ label {
 
 /* Custom premium bullet points using CSS ::before */
 .ai-recommendation-content li::before {
-  content: "•" !important;
+  content: "\2022" !important;
   position: absolute !important;
   left: 0.25rem !important;
   top: -0.1rem !important;
@@ -108,8 +123,33 @@ label {
   border-radius: 4px !important;
 }
 
+.ai-recommendation-content table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin-top: 1rem !important;
+  margin-bottom: 1.5rem !important;
+  font-size: 0.95rem !important;
+}
 
-/* ===== Design Tokens — Monochrome Premium ===== */
+.ai-recommendation-content th,
+.ai-recommendation-content td {
+  border: 1px solid var(--color-gray-200) !important;
+  padding: 0.75rem 1rem !important;
+  text-align: left !important;
+}
+
+.ai-recommendation-content th {
+  background-color: var(--color-gray-100) !important;
+  font-weight: bold !important;
+  color: var(--color-black) !important;
+}
+
+.ai-recommendation-content tr:nth-child(even) {
+  background-color: rgba(0, 0, 0, 0.02) !important;
+}
+
+
+/* ===== Design Tokens 窶� Monochrome Premium ===== */
 :root {
   --color-primary: #B1B2FF;
   --color-black: #0A0A0A;
@@ -125,8 +165,13 @@ label {
   --color-gray-800: #262626;
   --color-gray-900: #171717;
 
-  --font-sans: 'JetBrains Mono', 'Inter', 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Font families — ระบบฟอนต์หลัก */
+  --font-primary: 'JetBrains Mono', 'Inter', 'Noto Sans Thai', sans-serif;
+  --font-thai: 'Noto Sans Thai', sans-serif;
+  --font-english: 'JetBrains Mono', 'Inter', monospace;
+  --font-sans: 'JetBrains Mono', 'Inter', 'Noto Sans Thai', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+  --font-ai-recommendation: 'Bai Jamjuree', 'Noto Sans Thai', sans-serif;
 }
 
 /* ===== Base ===== */
@@ -135,26 +180,28 @@ html {
 }
 
 body {
+  margin: 0;
+  padding: 0;
   font-family: var(--font-sans);
-  color: var(--color-black);
-  background-color: var(--color-white);
+  background-color: var(--color-gray-50);
+  color: var(--color-gray-900);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* ปรับให้ยืดหยุ่นขึ้นเพื่อให้รองรับหน้าจอโน้ตบุ๊กที่เตี้ย (Short screens) */
+  /* 犧巵ｸ｣犧ｱ犧壟ｹｸｫ犹霞ｸ｢犧ｷ犧扉ｸｫ犧｢犧ｸ犹謂ｸ吭ｸもｸｶ犹霞ｸ吭ｹ€犧樅ｸｷ犹謂ｸｭ犹ｸｫ犹霞ｸ｣犧ｭ犧ｸ｣犧ｱ犧壟ｸｫ犧吭ｹ霞ｸｲ犧謂ｸｭ犹もｸ吭ｹ霞ｸ歩ｸ壟ｸｸ犹癌ｸ≒ｸ伶ｸｵ犹謂ｹ€犧歩ｸｵ犹霞ｸ｢ (Short screens) */
   overflow-x: hidden;
   overflow-y: auto;
 }
 
 @media (min-height: 800px) and (min-width: 1024px) {
   body {
-    overflow: hidden; /* คงความเป็น Single Screen ไว้เฉพาะในหน้าจอที่ใหญ่พอ */
+    overflow: hidden; /* 犧�ｸ�ｸ�ｸｧ犧ｲ犧｡犹犧巵ｹ�ｸ� Single Screen 犹�ｸｧ犹霞ｹ犧霞ｸ樅ｸｲ犧ｰ犹�ｸ吭ｸｫ犧吭ｹ霞ｸｲ犧謂ｸｭ犧伶ｸｵ犹謂ｹ�ｸｫ犧財ｹ謂ｸ樅ｸｭ */
   }
 }
 
 
 
 /* ===== Utility: Hide Scrollbar ===== */
-/* ซ่อน Scrollbar สำหรับ Chrome, Safari, IE, Edge และ Firefox */
+/* 犧金ｹ謂ｸｭ犧� Scrollbar 犧ｪ犧ｳ犧ｫ犧｣犧ｱ犧� Chrome, Safari, IE, Edge 犹≒ｸ･犧ｰ Firefox */
 .no-scrollbar::-webkit-scrollbar,
 html::-webkit-scrollbar,
 body::-webkit-scrollbar {
@@ -292,8 +339,8 @@ body {
   animation: ScaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* ===== Global Click (Active) Animation — เอฟเฟกต์เมื่อกดปุ่ม ===== */
-/* ปรับให้เรียบง่ายขึ้น ไม่เด้ง (Remove Bounce) ตามคำขอ */
+/* ===== Global Click (Active) Animation 窶� 犹犧ｭ犧游ｹ犧游ｸ≒ｸ歩ｹ呉ｹ犧｡犧ｷ犹謂ｸｭ犧≒ｸ扉ｸ巵ｸｸ犹謂ｸ｡ ===== */
+/* 犧巵ｸ｣犧ｱ犧壟ｹ�ｸｫ犹霞ｹ犧｣犧ｵ犧｢犧壟ｸ�ｹ謂ｸｲ犧｢犧もｸｶ犹霞ｸ� 犹�ｸ｡犹謂ｹ犧扉ｹ霞ｸ� (Remove Bounce) 犧歩ｸｲ犧｡犧�ｸｳ犧もｸｭ */
 button,
 [role="button"],
 .course-card,
@@ -374,7 +421,7 @@ button:active,
   transition: all 0.3s ease;
 }
 
-/* ===== Lesson Content — ย่อหน้าแบบตำราวิชาการไทย ===== */
+/* ===== Lesson Content 窶� 犧｢犹謂ｸｭ犧ｫ犧吭ｹ霞ｸｲ犹≒ｸ壟ｸ壟ｸ歩ｸｳ犧｣犧ｲ犧ｧ犧ｴ犧癌ｸｲ犧≒ｸｲ犧｣犹�ｸ伶ｸ｢ ===== */
 .lesson-content p {
   text-indent: 2.5em;
   margin-bottom: 0.5rem;
@@ -516,6 +563,7 @@ button:active,
 .markdown-prose h2,
 .markdown-prose h3,
 .markdown-prose h4 {
+  font-family: var(--font-sans);
   font-weight: 700;
   margin-top: 1.5rem;
   margin-bottom: 0.75rem;
@@ -546,8 +594,8 @@ button:active,
   border-radius: 0 8px 8px 0;
 }
 
-/* ตั้งค่าสีข้อความขาวสำหรับทุก text element ใน dark mode */
-/* ไม่รวม span เพื่อให้ SyntaxHighlighter inline styles ทำงานได้ */
+/* 犧歩ｸｱ犹霞ｸ�ｸ�ｹ謂ｸｲ犧ｪ犧ｵ犧もｹ霞ｸｭ犧�ｸｧ犧ｲ犧｡犧もｸｲ犧ｧ犧ｪ犧ｳ犧ｫ犧｣犧ｱ犧壟ｸ伶ｸｸ犧� text element 犹�ｸ� dark mode */
+/* 犹�ｸ｡犹謂ｸ｣犧ｧ犧｡ span 犹犧樅ｸｷ犹謂ｸｭ犹�ｸｫ犹� SyntaxHighlighter inline styles 犧伶ｸｳ犧�ｸｲ犧吭ｹ�ｸ扉ｹ� */
 .assistant-message-dark .markdown-prose,
 .assistant-message-dark .markdown-prose h1,
 .assistant-message-dark .markdown-prose h2,
@@ -601,7 +649,7 @@ button:active,
   letter-spacing: 0.05em !important;
 }
 
-/* Inline code เท่านั้น — ไม่รวม code blocks ที่มี syntax highlighting */
+/* Inline code 犹犧伶ｹ謂ｸｲ犧吭ｸｱ犹霞ｸ� 窶� 犹�ｸ｡犹謂ｸ｣犧ｧ犧｡ code blocks 犧伶ｸｵ犹謂ｸ｡犧ｵ syntax highlighting */
 .assistant-message-dark .markdown-prose code {
   background: rgba(0, 0, 0, 0.3) !important;
   color: #D1D2FF !important;
@@ -621,7 +669,7 @@ button:active,
   margin: 1rem 0 !important;
 }
 
-/* ป้องกัน inline-code styles จากการ leak เข้า syntax-highlighted code blocks */
+/* 犧巵ｹ霞ｸｭ犧�ｸ≒ｸｱ犧� inline-code styles 犧謂ｸｲ犧≒ｸ≒ｸｲ犧｣ leak 犹犧もｹ霞ｸｲ syntax-highlighted code blocks */
 .assistant-message-dark .markdown-prose .not-prose code {
   background: transparent !important;
   color: inherit !important;
@@ -633,26 +681,26 @@ button:active,
   box-shadow: none !important;
 }
 
-/* ให้ SyntaxHighlighter spans ใช้ inline color ได้ */
+/* 犹�ｸｫ犹� SyntaxHighlighter spans 犹�ｸ癌ｹ� inline color 犹�ｸ扉ｹ� */
 .assistant-message-dark .markdown-prose .not-prose span {
   color: inherit;
 }
 
-/* ===== Code Block Scrollbar — ตามรูปอ้างอิง ===== */
-/* ซ่อนลูกศร scrollbar ทั้งหมด */
+/* ===== Code Block Scrollbar 窶� 犧歩ｸｲ犧｡犧｣犧ｹ犧巵ｸｭ犹霞ｸｲ犧�ｸｭ犧ｴ犧� ===== */
+/* 犧金ｹ謂ｸｭ犧吭ｸ･犧ｹ犧≒ｸｨ犧｣ scrollbar 犧伶ｸｱ犹霞ｸ�ｸｫ犧｡犧� */
 .code-scrollbar::-webkit-scrollbar-button {
   display: none !important;
   width: 0 !important;
   height: 0 !important;
 }
 
-/* ขนาด scrollbar — pill shape ชัดเจน */
+/* 犧もｸ吭ｸｲ犧� scrollbar 窶� pill shape 犧癌ｸｱ犧扉ｹ犧謂ｸ� */
 .code-scrollbar::-webkit-scrollbar {
   height: 8px !important;
   width: 8px !important;
 }
 
-/* Track มืดลึก — แยกชัดจากพื้นหลังโค้ด */
+/* Track 犧｡犧ｷ犧扉ｸ･犧ｶ犧� 窶� 犹≒ｸ｢犧≒ｸ癌ｸｱ犧扉ｸ謂ｸｲ犧≒ｸ樅ｸｷ犹霞ｸ吭ｸｫ犧･犧ｱ犧�ｹもｸ�ｹ霞ｸ� */
 .code-scrollbar::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.3) !important;
   border-radius: 100px !important;
@@ -660,7 +708,7 @@ button:active,
   margin-block: 4px !important;
 }
 
-/* Thumb สีเทา pill shape — ตามรูปอ้างอิง */
+/* Thumb 犧ｪ犧ｵ犹犧伶ｸｲ pill shape 窶� 犧歩ｸｲ犧｡犧｣犧ｹ犧巵ｸｭ犹霞ｸｲ犧�ｸｭ犧ｴ犧� */
 .code-scrollbar::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.25) !important;
   border-radius: 100px !important;
@@ -677,75 +725,53 @@ button:active,
   scrollbar-color: rgba(255, 255, 255, 0.25) rgba(0, 0, 0, 0.3);
 }
 
-/* ============================================================
-   PREMIUM SCROLLBAR - THE FINAL FIX
-   ============================================================ */
-
-/* 1. Hide Arrows Globally / Put white box over them */
-::-webkit-scrollbar-button,
-::-webkit-scrollbar-button:start,
-::-webkit-scrollbar-button:end,
-::-webkit-scrollbar-button:vertical:decrement,
-::-webkit-scrollbar-button:vertical:increment,
-*::-webkit-scrollbar-button {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  background-color: #F9F9F9 !important; /* White box over the arrow */
-  color: #F9F9F9 !important;
-  -webkit-appearance: none !important;
-}
-
-/* 2. Premium Floating Scrollbar */
-.premium-scrollbar::-webkit-scrollbar {
-  width: 10px !important;
-  height: 10px !important;
+/* ============================================================ */
+  .premium-scrollbar::-webkit-scrollbar {
+  width: 14px !important;
+  height: 14px !important;
 }
 
 .premium-scrollbar::-webkit-scrollbar-track {
-  background: #F9F9F9 !important;
+  background: transparent !important; /* 犧≒ｸｳ犧ｫ犧吭ｸ扉ｸ樅ｸｷ犹霞ｸ吭ｸｫ犧･犧ｱ犧�ｹ≒ｸ伶ｸ｣犹�ｸ�ｹ�ｸｫ犹霞ｹもｸ巵ｸ｣犹謂ｸ�ｹ≒ｸｪ犧� 犹犧樅ｸｷ犹謂ｸｭ犹�ｸｫ犹霞ｸｪ犧≒ｸｭ犧壟ｸｲ犧ｪ犧ｵ犧｡犹謂ｸｧ犧�ｹ犧≒ｸｲ犧ｰ犧歩ｸｴ犧扉ｸもｸｭ犧壟ｸ≒ｸ･犹謂ｸｭ犧�ｸｭ犧｢犹謂ｸｲ犧�ｹ犧扉ｹ謂ｸ吭ｸ癌ｸｱ犧� */
   border-radius: 100px !important;
-  border: 2px solid white !important; /* Floating offset from container edge */
-  margin-block: 10px !important; /* Original stable value - Combine with parent padding */
+  margin-block: 6px !important; /* 犹犧ｧ犹霞ｸ吭ｸ｣犧ｰ犧｢犧ｰ犧ｫ犹謂ｸｲ犧�ｸ壟ｸ吭ｸ･犹謂ｸｲ犧�ｹ犧･犹�ｸ≒ｸ吭ｹ霞ｸｭ犧｢犹犧樅ｸｷ犹謂ｸｭ犧�ｸｧ犧ｲ犧｡犧≒ｸ･犧｡犧≒ｸ･犧ｷ犧� */
 }
 
 .premium-scrollbar::-webkit-scrollbar-thumb {
-  background-color: var(--color-primary) !important;
-  border-radius: 100px !important;
-  border: 2px solid #F9F9F9 !important; /* Offset from track edge */
-  background-clip: content-box !important;
+  background-color: var(--color-primary) !important; /* 犹�ｸ癌ｹ霞ｸｪ犧ｵ犧｡犹謂ｸｧ犧�ｸｫ犧･犧ｱ犧≒ｸｭ犧ｱ犧吭ｹ≒ｸｪ犧吭ｸ樅ｸ｣犧ｵ犹犧｡犧ｵ犧｢犧｡犧もｸｭ犧�ｸ｣犧ｰ犧壟ｸ� */
+  border-radius: 100px !important; /* 犧伶ｸｳ犧｣犧ｹ犧巵ｸ伶ｸ｣犧�ｹ≒ｸ�ｸ巵ｸ金ｸｹ犧･犧｡犧� (Pill Shape) 犧歩ｸｲ犧｡犧歩ｸｱ犧ｧ犧ｭ犧｢犹謂ｸｲ犧� */
+  /* 犧･犧� border 犹≒ｸ･犧ｰ background-clip 犹犧扉ｸｴ犧｡犧ｭ犧ｭ犧� 犹犧樅ｸｷ犹謂ｸｭ犹�ｸｫ犹霞ｸｪ犧≒ｸｭ犧壟ｸｲ犧ｪ犧ｵ犧｡犹謂ｸｧ犧�ｸもｸ｢犧ｲ犧｢犹犧歩ｹ�ｸ｡犹≒ｸ･犧ｰ犹≒ｸ吭ｸ壟ｸ癌ｸｴ犧扉ｸ歩ｸｴ犧扉ｸもｸｭ犧壟ｸもｸｧ犧ｲ犧もｸｭ犧�ｸ≒ｸ･犹謂ｸｭ犧� content 犧ｪ犧ｵ犧扉ｸｳ犹もｸ扉ｸ｢犧歩ｸ｣犧� */
 }
 
 .premium-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: #8A8BFF !important;
+  background-color: #8A8BFF !important; /* 犧ｪ犧ｵ犧｡犹謂ｸｧ犧�ｸｪ犧ｧ犹謂ｸｲ犧�ｹ犧｡犧ｷ犹謂ｸｭ犧憫ｸｹ犹霞ｹ�ｸ癌ｹ霞ｸ�ｸｲ犧吭ｹ犧ｭ犧ｲ犹犧｡犧ｲ犧ｪ犹呉ｸ｡犧ｲ犧ｧ犧ｲ犧�ｸ伶ｸｱ犧� */
 }
 
-/* Firefox Support */
+/* 犧｣犧ｭ犧�ｸ｣犧ｱ犧壟ｸｪ犧ｳ犧ｫ犧｣犧ｱ犧壟ｹ犧壟ｸ｣犧ｲ犧ｧ犹呉ｹ犧金ｸｭ犧｣犹� Firefox */
 .premium-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: var(--color-primary) transparent;
 }
-
-/* Exam Specific Visible Scrollbar */
 .custom-exam-scrollbar::-webkit-scrollbar {
-  width: 8px !important;
+  width: 14px !important;
   display: block !important;
 }
 .custom-exam-scrollbar::-webkit-scrollbar-track {
-  background: #F1F1F1 !important;
-  border-radius: 10px !important;
+  background: transparent !important;
+  border-left: 1px solid #000 !important; /* สีดำคือขอบกล่อง (Black box border on the left side of track) */
+  border-radius: 0 !important;
 }
 .custom-exam-scrollbar::-webkit-scrollbar-thumb {
-  background: #A3A3A3 !important; 
-  border-radius: 10px !important;
-  border: 2px solid #F1F1F1 !important;
+  background: #8c8cf3 !important; /* สีม่วงคือสกอบา (Purple scrollbar thumb) */
+  border-radius: 0 !important;
+  border: none !important;
 }
 .custom-exam-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--color-primary) !important;
+  background: #7a7aff !important;
 }
 .custom-exam-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: #A3A3A3 #F1F1F1;
+  scrollbar-color: #8c8cf3 transparent;
 }
 
 /* Force Year Card Hover Styles */
@@ -998,7 +1024,7 @@ button:active,
   }
 }
 
-/* ===== Skeleton Loading — Premium Shimmer Effect ===== */
+/* ===== Skeleton Loading 窶� Premium Shimmer Effect ===== */
 @keyframes SkeletonShimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
@@ -1028,7 +1054,7 @@ button:active,
   border-radius: 8px;
 }
 
-/* ===== Celebration Animation — Premium Effects ===== */
+/* ===== Celebration Animation 窶� Premium Effects ===== */
 @keyframes ConfettiRain {
   0% { transform: translateY(-20vh) rotate(0deg); opacity: 0; }
   10% { opacity: 1; }
@@ -1038,7 +1064,7 @@ button:active,
 
 @keyframes CelebrationGlow {
   0%, 100% { background: rgba(255, 255, 255, 0); }
-  50% { background: rgba(255, 255, 255, 0.8); } /* ปรับเป็นสีขาวแทนสีม่วงตามความต้องการ */
+  50% { background: rgba(255, 255, 255, 0.8); } /* 犧巵ｸ｣犧ｱ犧壟ｹ犧巵ｹ�ｸ吭ｸｪ犧ｵ犧もｸｲ犧ｧ犹≒ｸ伶ｸ吭ｸｪ犧ｵ犧｡犹謂ｸｧ犧�ｸ歩ｸｲ犧｡犧�ｸｧ犧ｲ犧｡犧歩ｹ霞ｸｭ犧�ｸ≒ｸｲ犧｣ */
 }
 
 .celebration-bg {
@@ -1054,7 +1080,7 @@ button:active,
   position: absolute;
   inset: 0;
   overflow: hidden;
-  z-index: 100; /* ให้อยู่เหนือกล่องข้อความ */
+  z-index: 100; /* 犹�ｸｫ犹霞ｸｭ犧｢犧ｹ犹謂ｹ犧ｫ犧吭ｸｷ犧ｭ犧≒ｸ･犹謂ｸｭ犧�ｸもｹ霞ｸｭ犧�ｸｧ犧ｲ犧｡ */
   pointer-events: none;
 }
 
@@ -1069,7 +1095,7 @@ button:active,
   animation: ConfettiRain 4s linear infinite;
 }
 
-/* ปรับแต่งเม็ดๆ (Confetti) ให้มีหลายสีและหลายขนาด */
+/* 犧巵ｸ｣犧ｱ犧壟ｹ≒ｸ歩ｹ謂ｸ�ｹ犧｡犹�ｸ扉ｹ� (Confetti) 犹�ｸｫ犹霞ｸ｡犧ｵ犧ｫ犧･犧ｲ犧｢犧ｪ犧ｵ犹≒ｸ･犧ｰ犧ｫ犧･犧ｲ犧｢犧もｸ吭ｸｲ犧� */
 .confetti:nth-child(2n) { background-color: #8c8cf3; width: 6px; height: 6px; border-radius: 50%; }
 .confetti:nth-child(3n) { background-color: #c4c4ff; width: 10px; height: 10px; }
 .confetti:nth-child(4n) { background-color: #a0a0ff; width: 5px; height: 10px; border-radius: 4px; }
@@ -1077,3 +1103,637 @@ button:active,
 .confetti:nth-child(6n) { background-color: #b0b0ff; width: 7px; height: 7px; border-radius: 50%; }
 
 
+/* ================================================================ */
+/* ===== PDF Evaluator — Premium Monochrome Glassmorphism ===== */
+/* ================================================================ */
+
+/* --- Container --- */
+.pdf-eval-container {
+  margin-top: 2rem;
+  padding: 2rem;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 16px;
+  transition: all 0.3s ease;
+}
+
+/* --- Header --- */
+.pdf-eval-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.pdf-eval-header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: var(--color-primary);
+  color: white;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.pdf-eval-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-black);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.pdf-eval-subtitle {
+  font-size: 0.8rem;
+  color: var(--color-gray-500);
+  margin: 2px 0 0;
+}
+
+/* --- Dropzone --- */
+.pdf-eval-dropzone {
+  border: 2px dashed var(--color-gray-300);
+  border-radius: 14px;
+  padding: 2.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: var(--color-gray-50);
+}
+
+.pdf-eval-dropzone:hover {
+  border-color: var(--color-primary);
+  background: rgba(177, 178, 255, 0.04);
+}
+
+.pdf-eval-dropzone--active {
+  border-color: var(--color-primary);
+  background: rgba(177, 178, 255, 0.08);
+  transform: scale(1.01);
+}
+
+.pdf-eval-dropzone-icon {
+  color: var(--color-gray-400);
+  transition: color 0.3s;
+}
+
+.pdf-eval-dropzone:hover .pdf-eval-dropzone-icon {
+  color: var(--color-primary);
+}
+
+.pdf-eval-dropzone-text {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-gray-700);
+  margin: 0;
+}
+
+.pdf-eval-dropzone-hint {
+  font-size: 0.75rem;
+  color: var(--color-gray-400);
+  margin: 0;
+}
+
+.pdf-eval-file-input {
+  display: none;
+}
+
+/* --- File Info Badge --- */
+.pdf-eval-file-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 10px;
+}
+
+.pdf-eval-file-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-gray-600);
+}
+
+.pdf-eval-file-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-black);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-eval-file-size {
+  font-size: 0.75rem;
+  color: var(--color-gray-400);
+  font-family: var(--font-mono);
+}
+
+.pdf-eval-remove-btn {
+  background: none;
+  border: none;
+  color: var(--color-gray-400);
+  font-size: 1rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.pdf-eval-remove-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+/* --- Analyze Button --- */
+.pdf-eval-analyze-btn {
+  margin-top: 1.25rem;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.5rem;
+  background: var(--color-black);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  transition: all 0.3s ease;
+  letter-spacing: -0.01em;
+}
+
+.pdf-eval-analyze-btn:hover:not(:disabled) {
+  background: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.pdf-eval-analyze-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* --- Loading State --- */
+.pdf-eval-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 2rem;
+  gap: 1.5rem;
+}
+
+.pdf-eval-spinner {
+  position: relative;
+  width: 60px;
+  height: 60px;
+}
+
+.pdf-eval-spinner-ring {
+  position: absolute;
+  inset: 0;
+  border: 3px solid var(--color-gray-200);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: pdf-eval-spin 1s linear infinite;
+}
+
+.pdf-eval-spinner-ring--delay {
+  border-color: transparent;
+  border-top-color: rgba(177, 178, 255, 0.3);
+  animation-duration: 1.5s;
+  animation-direction: reverse;
+}
+
+@keyframes pdf-eval-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pdf-eval-loading-text {
+  font-size: 0.9rem;
+  color: var(--color-gray-600);
+  font-weight: 500;
+  text-align: center;
+  animation: pdf-eval-fade-in 0.5s ease;
+}
+
+@keyframes pdf-eval-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pdf-eval-loading-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.pdf-eval-loading-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  animation: pdf-eval-dot-bounce 1.2s ease-in-out infinite;
+}
+
+@keyframes pdf-eval-dot-bounce {
+  0%, 80%, 100% { transform: scale(0.5); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* --- Error State --- */
+.pdf-eval-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem;
+  gap: 1rem;
+}
+
+.pdf-eval-error-icon {
+  color: #ef4444;
+}
+
+.pdf-eval-error-text {
+  font-size: 0.9rem;
+  color: var(--color-gray-600);
+  text-align: center;
+  max-width: 400px;
+  line-height: 1.6;
+}
+
+.pdf-eval-retry-btn {
+  padding: 0.6rem 1.5rem;
+  background: var(--color-black);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  transition: all 0.3s;
+}
+
+.pdf-eval-retry-btn:hover {
+  background: var(--color-primary);
+}
+
+/* --- Result Step --- */
+.pdf-eval-result {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* --- Summary Card --- */
+.pdf-eval-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  border-radius: 14px;
+  border: 1px solid var(--color-gray-200);
+}
+
+.pdf-eval-summary--pass {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.06) 0%, rgba(34, 197, 94, 0.02) 100%);
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.pdf-eval-summary--fail {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.06) 0%, rgba(239, 68, 68, 0.02) 100%);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.pdf-eval-score-circle {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.pdf-eval-score-number {
+  font-size: 2.8rem;
+  font-weight: 800;
+  color: var(--color-black);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-family: var(--font-mono);
+}
+
+.pdf-eval-score-total {
+  font-size: 1rem;
+  color: var(--color-gray-400);
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+
+.pdf-eval-summary-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pdf-eval-verdict-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  width: fit-content;
+}
+
+.pdf-eval-badge--pass {
+  background: rgba(34, 197, 94, 0.12);
+  color: #16a34a;
+}
+
+.pdf-eval-badge--fail {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+
+.pdf-eval-verdict-text {
+  font-size: 0.85rem;
+  color: var(--color-gray-600);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* --- Metrics Row --- */
+.pdf-eval-metrics-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .pdf-eval-metrics-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pdf-eval-metric-card {
+  padding: 1.25rem;
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 12px;
+}
+
+.pdf-eval-metric-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-black);
+  margin: 0 0 0.75rem;
+}
+
+.pdf-eval-metric-stats {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-gray-700);
+  margin-bottom: 0.5rem;
+  font-family: var(--font-mono);
+}
+
+.pdf-eval-length-verdict {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.pdf-eval-length--ok {
+  background: rgba(34, 197, 94, 0.1);
+  color: #16a34a;
+}
+
+.pdf-eval-length--warn {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+}
+
+.pdf-eval-metric-detail {
+  font-size: 0.78rem;
+  color: var(--color-gray-500);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* --- Exam Readiness Bar --- */
+.pdf-eval-exam-bar-container {
+  margin-bottom: 0.5rem;
+}
+
+.pdf-eval-exam-bar-bg {
+  height: 8px;
+  background: var(--color-gray-200);
+  border-radius: 100px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.pdf-eval-exam-bar-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 100px;
+  transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pdf-eval-exam-bar-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-gray-600);
+  font-family: var(--font-mono);
+}
+
+.pdf-eval-exam-verdict {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.pdf-eval-exam--pass {
+  background: rgba(34, 197, 94, 0.1);
+  color: #16a34a;
+}
+
+.pdf-eval-exam--fail {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+/* --- Bloom's Taxonomy Section --- */
+.pdf-eval-bloom-section {
+  padding: 1.25rem;
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 12px;
+}
+
+.pdf-eval-section-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-black);
+  margin: 0 0 1rem;
+}
+
+.pdf-eval-bloom-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .pdf-eval-bloom-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Radar Chart --- */
+.pdf-eval-radar-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
+.pdf-eval-radar-svg {
+  width: 100%;
+  max-width: 280px;
+}
+
+.pdf-eval-radar-area {
+  transition: d 0.5s ease;
+}
+
+.pdf-eval-radar-label {
+  fill: var(--color-gray-700);
+  font-family: var(--font-sans);
+}
+
+/* --- Bloom Level List --- */
+.pdf-eval-bloom-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.pdf-eval-bloom-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pdf-eval-bloom-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pdf-eval-bloom-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-gray-700);
+}
+
+.pdf-eval-bloom-verdict {
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.pdf-eval-bloom-bar-bg {
+  height: 6px;
+  background: var(--color-gray-200);
+  border-radius: 100px;
+  overflow: hidden;
+}
+
+.pdf-eval-bloom-bar-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 100px;
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pdf-eval-bloom-indicators {
+  font-size: 0.7rem;
+  color: var(--color-gray-400);
+  margin: 0;
+  font-style: italic;
+}
+
+/* --- Recommendations --- */
+.pdf-eval-recommendations {
+  padding: 1.25rem;
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 12px;
+}
+
+.pdf-eval-rec-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pdf-eval-rec-item {
+  position: relative;
+  padding-left: 1.25rem;
+  font-size: 0.82rem;
+  color: var(--color-gray-600);
+  line-height: 1.6;
+}
+
+.pdf-eval-rec-item::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+/* --- Action Buttons --- */
+.pdf-eval-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.pdf-eval-reset-btn {
+  padding: 0.7rem 1.5rem;
+  background: var(--color-gray-100);
+  color: var(--color-gray-700);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  transition: all 0.3s;
+}
+
+.pdf-eval-reset-btn:hover {
+  background: var(--color-gray-200);
+  border-color: var(--color-gray-300);
+}

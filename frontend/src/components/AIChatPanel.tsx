@@ -18,6 +18,14 @@ export function AIChatPanel() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '0px';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [input]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -41,6 +49,9 @@ export function AIChatPanel() {
     // Setup UI for streaming: display the user's message and an empty placeholder for the assistant
     setMessages([...messages, { role: 'user', content: input.trim(), animate: false }, { role: 'assistant', content: "", animate: true }]);
     setInput("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
     setIsLoading(true);
 
     try {
@@ -168,6 +179,7 @@ export function AIChatPanel() {
             className="flex items-end gap-3 bg-white/5 border border-white/20 rounded-xl p-2 focus-within:border-[var(--color-primary)] focus-within:bg-white/10 focus-within:shadow-[0_0_20px_rgba(177,178,255,0.3)] transition-all relative"
           >
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {

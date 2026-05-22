@@ -105,12 +105,14 @@ def update_user_quota(user_id: str, tokens_used: int, is_paid_model: bool = Fals
         _quota_cache[user_id] = user_data
         return user_data
 
-    return user_data
+# Middleware — กำหนด CORS Origins จาก Environment Variable เพื่อความปลอดภัย
+# ใช้ค่าเริ่มต้นสำหรับ development (localhost) และเพิ่ม production URL ผ่าน .env
+_cors_origins_raw = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
+_allowed_origins = [origin.strip() for origin in _cors_origins_raw.split(",") if origin.strip()]
 
-# Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -260,8 +262,11 @@ async def InvokeGeneration(messages, user_id=None):
         return result
     except Exception as e:
         error_str = str(e)
-        if is_byok and any(err in error_str for err in ["401", "402"]):
-            raise HTTPException(status_code=400, detail=translate_openrouter_error(int(error_str[:3]) if error_str[:3].isdigit() else 401))
+        if any(err in error_str for err in ["401", "402"]):
+            status_code = int(error_str[:3]) if error_str[:3].isdigit() else 401
+            # ถ้าเป็น BYOK จะบอกให้เช็คหน้า Setting ถ้าไม่ใช่จะบอกว่าระบบกลางมีปัญหา
+            detail_msg = translate_openrouter_error(status_code) if is_byok else "API Key ของระบบกลาง (Platform Key) หมดอายุหรือไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบให้เปลี่ยนคีย์ใน .env"
+            raise HTTPException(status_code=400, detail=detail_msg)
             
         if "429" in error_str:
             print(f"Rate limited on primary generation model. Try fallback: {fallback_model_name}")
@@ -413,6 +418,13 @@ class BYOKSetModelRequest(BaseModel):
     userId: str
     modelId: str
 
+# --- PDF Evaluation Schema ---
+# ใช้สำหรับรับข้อมูล PDF ที่สกัดข้อความแล้ว เพื่อส่งให้ AI ประเมินคุณภาพ
+class PDFEvaluationRequest(BaseModel):
+    text: str  # ข้อความที่สกัดจาก PDF (ส่งมาจาก frontend ผ่าน /api/pdf/extract)
+    course_name: Optional[str] = None  # ชื่อวิชา (ถ้ามี — ช่วย AI ประเมินบริบท)
+    userId: Optional[str] = None  # ใช้สำหรับติดตาม Token Quota
+
 # Pydantic Schemas for LLM Structured Output
 class QuizQuestion(BaseModel):
     question: str = Field(description="The text of the question")
@@ -517,54 +529,6 @@ def convert_messages(messages: List[Message]) -> List[BaseMessage]:
 
 
 # --- API Routes ---
-
-# --- API Route: สกัดข้อความจากไฟล์ PDF แบบ In-Memory ---
-@app.post("/api/pdf/extract")
-async def extract_pdf(file: UploadFile = File(...)):
-    """
-    สกัดข้อความภาษาไทยและอังกฤษจากไฟล์ PDF ในหน่วยความจำชั่วคราว (In-Memory)
-    ข้อสำคัญ: รองรับการสกัดข้อความในภาษาไทยอย่างถูกต้อง ปลอดภัย และมีขีดจำกัดขนาดไฟล์ไม่เกิน 10MB
-    """
-    # 1. ตรวจสอบประเภทไฟล์
-    if not file.filename.endswith('.pdf') and file.content_type != 'application/pdf':
-        raise HTTPException(status_code=400, detail="กรุณาอัปโหลดไฟล์รูปแบบ PDF เท่านั้น")
-
-    try:
-        # 2. อ่านไฟล์ในรูปแบบ bytes เข้าสู่หน่วยความจำ
-        pdf_bytes = await file.read()
-        
-        # 3. จำกัดขนาดไฟล์ไม่เกิน 10MB เพื่อความปลอดภัยของหน่วยความจำเซิร์ฟเวอร์
-        if len(pdf_bytes) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="ขนาดไฟล์ PDF ต้องไม่เกิน 10MB")
-            
-        # 4. ใช้ BytesIO และ pypdf ในการสกัดคำ
-        import pypdf
-        pdf_file = io.BytesIO(pdf_bytes)
-        reader = pypdf.PdfReader(pdf_file)
-        
-        extracted_text = []
-        for index, page in enumerate(reader.pages):
-            text = page.extract_text()
-            if text:
-                extracted_text.append(f"--- หน้าที่ {index + 1} ---\n{text}")
-                
-        # 5. ดึงข้อความรวม
-        full_text = "\n\n".join(extracted_text).strip()
-        
-        if not full_text:
-            raise HTTPException(
-                status_code=400, 
-                detail="ไม่พบข้อความในไฟล์ PDF นี้ (ไฟล์อาจเป็นสแกนรูปภาพ หรือไม่มีเลเยอร์ข้อความดิจิทัล)"
-            )
-            
-        return {"text": full_text}
-        
-    except HTTPException as http_err:
-        raise http_err
-    except Exception as e:
-        print("PDF Extract Error:", e)
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการดึงข้อมูลจาก PDF: {str(e)}")
 
 
 @app.post("/api/chat")
@@ -921,6 +885,11 @@ Requirements:
 3. Provide a deep analysis of their strengths based on the topic scores and Bloom's taxonomy domains.
 4. Provide highly specific, actionable recommendations on what they need to improve and how they can do it.
 5. EXTREMELY IMPORTANT: Use a highly professional, natural human tone (Professional Human Tone). Do NOT use any emojis. Do NOT use repetitive or robotic phrases (e.g., "จากผลการประเมินพบว่า", "ขอแสดงความยินดี"). Write as if an expert human teacher is giving thoughtful advice to a student.
+6. CRITICAL MATHEMATICAL CONSISTENCY: Carefully analyze the scores and percentages for each Bloom's Taxonomy domain in the provided data. Your analysis must be 100% mathematically correct and consistent with these numbers. For example, if "Evaluate" has 57% and "Remember" has 25%, you must NOT describe "Remember" as a strength or as "having a good score" compared to "Evaluate". You must correctly identify which cognitive levels are actually strong (highest percentages) and which are actually weak (lowest percentages), and construct your summary and analysis accordingly. Do not hallucinate or make contradictory statements.
+7. USE STANDARD MARKDOWN TABLES: When presenting structured lists of items with scores/percentages and descriptions (such as the list of Bloom's Taxonomy domains with their scores and meanings), ALWAYS format them as a standard Markdown table. Do NOT use raw spaces or tabs for alignment, as they do not render consistently on different devices. Use the following format for tables:
+   | ระดับ Bloom | คะแนน % | ความหมายของคะแนน |
+   | :--- | :---: | :--- |
+   | [Bloom Domain Name] | [Score]% | [Meaning of Score] |
 
 Structure:
 ## สรุปภาพรวมผลการประเมิน (Overall Performance)
@@ -1095,8 +1064,9 @@ async def get_user_quota(userId: str):
 
 # --- SUPABASE ROUTES ---
 
-def ExecuteWithRetry(query_builder, retries_left=3, delay_seconds=0.5, backoff_factor=2):
+async def ExecuteWithRetry(query_builder, retries_left=3, delay_seconds=0.5, backoff_factor=2):
     # รัน Supabase Query พร้อมกลไก Retry และ Exponential Backoff เพื่อความเสถียรของระบบ
+    # ใช้ asyncio.sleep แทน time.sleep เพื่อไม่ block event loop
     last_error = None
     for attempt in range(retries_left):
         try:
@@ -1105,7 +1075,7 @@ def ExecuteWithRetry(query_builder, retries_left=3, delay_seconds=0.5, backoff_f
             last_error = error
             print(f"[RETRY] Supabase query failed: {error}. Attempt {attempt + 1} of {retries_left}...")
             if attempt < retries_left - 1:
-                time.sleep(delay_seconds)
+                await asyncio.sleep(delay_seconds)
                 delay_seconds *= backoff_factor
     raise last_error
 
@@ -1117,7 +1087,7 @@ async def get_lessons(course_slug: Optional[str] = None):
         if course_slug:
             query = query.eq('course_slug', course_slug)
         # รันคิวรีด้วยฟังก์ชัน ExecuteWithRetry เพื่อป้องกันปัญหา Timeout หรือ Network Fluctuation
-        response = ExecuteWithRetry(query, retries_left=3, delay_seconds=0.5, backoff_factor=2)
+        response = await ExecuteWithRetry(query, retries_left=3, delay_seconds=0.5, backoff_factor=2)
         return response.data
     except Exception as e:
         traceback.print_exc()
@@ -1270,6 +1240,149 @@ async def byok_set_model(request: BYOKSetModelRequest):
         if not status["has_key"]:
             raise HTTPException(status_code=403, detail="ต้องเพิ่ม API Key ก่อนถึงจะใช้ Premium Model ได้")
     return update_user_active_model(request.userId, request.modelId)
+
+
+# ================================================================
+# PDF Evaluation — วิเคราะห์คุณภาพเนื้อหา PDF สำหรับสร้างบทเรียนและข้อสอบ
+# ================================================================
+
+# ค่าคงที่สำหรับการตัดข้อความ PDF ขนาดใหญ่ให้พอดีกับ Context Limit ของ LLM
+MAX_PDF_EVAL_CHARS = 15000  # จำนวนตัวอักษรสูงสุดที่ส่งให้ AI ประเมิน
+
+def SamplePdfContent(text: str, max_chars: int = MAX_PDF_EVAL_CHARS) -> str:
+    """สุ่มตัวอย่างเนื้อหา PDF โดยดึงจากส่วนต้น กลาง ท้าย เพื่อให้ครอบคลุมเนื้อหาทั้งหมด
+    ลดปัญหา Token เกิน Context Limit สำหรับ PDF ที่มีความยาวมาก (สูงสุด 200 หน้า)
+    """
+    if not text or len(text) <= max_chars:
+        return text
+
+    # แบ่งเนื้อหาเป็น 3 ส่วน: ต้น กลาง ท้าย
+    third = max_chars // 3
+    beginning = text[:third]
+    middle_start = (len(text) // 2) - (third // 2)
+    middle = text[middle_start:middle_start + third]
+    ending = text[-(third):]
+
+    sampled = (
+        f"[ส่วนต้นของเอกสาร]\n{beginning}\n\n"
+        f"[ส่วนกลางของเอกสาร]\n{middle}\n\n"
+        f"[ส่วนท้ายของเอกสาร]\n{ending}"
+    )
+    return sampled
+
+
+@app.post("/api/pdf/evaluate")
+async def evaluate_pdf_quality(request: PDFEvaluationRequest):
+    """ประเมินคุณภาพเนื้อหา PDF สำหรับสร้างบทเรียนและข้อสอบ 40 ข้อ
+    วิเคราะห์ 4 ด้าน: ความยาวเนื้อหา, Bloom's Taxonomy 6 ด้าน,
+    ความเพียงพอสำหรับข้อสอบ 40 ข้อ, และคุณภาพโดยรวม
+    """
+    # 1. ตรวจสอบว่ามีเนื้อหาเพียงพอสำหรับการวิเคราะห์
+    if not request.text or len(request.text.strip()) < 100:
+        raise HTTPException(
+            status_code=400,
+            detail="เนื้อหา PDF สั้นเกินไป (ต้องมีอย่างน้อย 100 ตัวอักษร) กรุณาอัปโหลด PDF ที่มีเนื้อหามากกว่านี้"
+        )
+
+    try:
+        start_time = time.time()
+        raw_text = request.text.strip()
+
+        # 2. คำนวณ metadata เบื้องต้น (จำนวนคำ, จำนวนหน้าโดยประมาณ)
+        word_count = len(raw_text.split())
+        page_estimate = max(1, word_count // 300)  # ประมาณ 300 คำต่อหน้า
+
+        # 3. ตัดเนื้อหาให้เหมาะสมกับ LLM (Sampling สำหรับ PDF ขนาดใหญ่)
+        sampled_text = SamplePdfContent(raw_text, MAX_PDF_EVAL_CHARS)
+        is_sampled = len(raw_text) > MAX_PDF_EVAL_CHARS
+
+        # 4. กำหนดชื่อวิชา (ถ้ามี)
+        course_context = f"\nชื่อวิชา: {request.course_name}" if request.course_name else ""
+
+        # 5. สร้าง AI Prompt สำหรับการวิเคราะห์คุณภาพ
+        eval_prompt = f"""คุณเป็นผู้เชี่ยวชาญด้านการศึกษาและการออกแบบหลักสูตร (Instructional Design Expert)
+ให้วิเคราะห์เนื้อหาจากไฟล์ PDF ด้านล่างนี้ว่ามีคุณภาพเพียงพอสำหรับ:
+1. ใช้เป็นเนื้อหาบทเรียน (Lesson Content)
+2. สร้างข้อสอบ Multiple-Choice ได้ 40 ข้อ ที่ครอบคลุม Bloom's Taxonomy 6 ระดับ
+
+ข้อมูลเอกสาร:
+- จำนวนคำทั้งหมด: {word_count} คำ
+- จำนวนหน้าโดยประมาณ: {page_estimate} หน้า
+- เนื้อหาถูกสุ่มตัวอย่าง: {"ใช่ (เนื้อหายาวเกิน จึงดึงมาเฉพาะส่วนต้น กลาง ท้าย)" if is_sampled else "ไม่ (ส่งมาทั้งหมด)"}{course_context}
+
+คุณต้องตอบกลับเป็น JSON เท่านั้น ตามรูปแบบนี้:
+{{
+  "content_length": {{
+    "word_count": {word_count},
+    "page_estimate": {page_estimate},
+    "verdict": "สั้นไป" | "พอดี" | "ยาวไป",
+    "detail": "อธิบายสั้นๆ ว่าทำไม"
+  }},
+  "bloom_taxonomy": {{
+    "remember": {{ "score": 0-100, "found_indicators": ["..."], "verdict": "ดี" | "พอใช้" | "ต้องปรับปรุง" }},
+    "understand": {{ "score": 0-100, "found_indicators": ["..."], "verdict": "..." }},
+    "apply": {{ "score": 0-100, "found_indicators": ["..."], "verdict": "..." }},
+    "analyze": {{ "score": 0-100, "found_indicators": ["..."], "verdict": "..." }},
+    "evaluate": {{ "score": 0-100, "found_indicators": ["..."], "verdict": "..." }},
+    "create": {{ "score": 0-100, "found_indicators": ["..."], "verdict": "..." }}
+  }},
+  "exam_readiness": {{
+    "estimated_questions": number,
+    "target_questions": 40,
+    "is_sufficient": boolean,
+    "detail": "อธิบายว่าทำไมถึงสร้างข้อสอบได้/ไม่ได้ 40 ข้อ"
+  }},
+  "overall": {{
+    "quality_score": 0-100,
+    "is_passed": boolean,
+    "verdict": "ผ่าน — ... " | "ไม่ผ่าน — ...",
+    "recommendations": ["คำแนะนำที่ 1", "คำแนะนำที่ 2", "..."]
+  }}
+}}
+
+CRITICAL: ตอบเป็น JSON ล้วนเท่านั้น ห้ามมี markdown, code fence, หรือข้อความอื่นใด
+
+เนื้อหา PDF:
+{sampled_text}"""
+
+        # 6. ส่งให้ AI วิเคราะห์ผ่าน InvokeGeneration
+        print(f"--- กำลังประเมินคุณภาพ PDF: {word_count} คำ, ~{page_estimate} หน้า (sampled: {is_sampled}) ---")
+        result = await InvokeGeneration(
+            [SystemMessage(content=eval_prompt)],
+            user_id=request.userId
+        )
+
+        # 7. แยกข้อมูล JSON จากผลลัพธ์ AI
+        evaluation = parse_json_from_text(result.content)
+
+        # 8. ติดตาม Token ที่ใช้ไป
+        tokens_used = 0
+        if hasattr(result, "response_metadata"):
+            tokens_used = result.response_metadata.get("token_usage", {}).get("total_tokens", 0)
+        if tokens_used == 0:
+            tokens_used = max(1, (len(eval_prompt) + len(result.content)) // 4)
+
+        if request.userId:
+            update_user_quota(request.userId, tokens_used)
+
+        elapsed = time.time() - start_time
+        print(f"--- PDF EVALUATION DONE: quality_score={evaluation.get('overall', {}).get('quality_score', '?')} in {elapsed:.2f}s ---")
+
+        return {"evaluation": evaluation}
+
+    except json.JSONDecodeError as e:
+        print(f"PDF Evaluation JSON Parse Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail="AI ส่งข้อมูลกลับมาในรูปแบบที่ไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"PDF Evaluation Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาดในการประเมิน PDF: {str(e)}")
 
 
 if __name__ == "__main__":

@@ -146,8 +146,13 @@ export const apiService = {
         })
       });
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || errorData.error || 'Network response was not ok');
+        const errorData = await res.json().catch(() => null);
+        if (errorData) {
+          throw new Error(errorData.detail || errorData.error || 'Network response was not ok');
+        } else {
+          const errorText = await res.text().catch(() => 'Unknown error text');
+          throw new Error(`Backend Error ${res.status}: ${errorText}`);
+        }
       }
       return await res.json();
     } catch (error) {
@@ -419,5 +424,74 @@ export const apiService = {
       console.error('Error in setByokModel:', error);
       return { success: false, error: 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้' };
     }
+  },
+
+  // ============================================================
+  // 13. PDF Quality Evaluation — ประเมินคุณภาพเนื้อหา PDF
+  // ============================================================
+
+  /** ส่งข้อความ PDF ไปให้ AI วิเคราะห์คุณภาพตาม Bloom's Taxonomy 6 ด้าน */
+  async EvaluatePdfQuality(
+    text: string,
+    course_name?: string,
+    userId?: string
+  ): Promise<PdfEvaluationResponse> {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/pdf/evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, course_name, userId })
+      });
+
+      if (!res.ok) {
+        // ดึงข้อความ error จาก backend เพื่อแสดงให้ผู้ใช้
+        const error_data = await res.json().catch(() => ({ detail: 'เกิดข้อผิดพลาดในการประเมิน PDF' }));
+        throw new Error(error_data.detail || 'เกิดข้อผิดพลาดในการประเมิน PDF');
+      }
+
+      return await res.json();
+    } catch (error) {
+      console.error('Error in EvaluatePdfQuality:', error);
+      throw error;
+    }
   }
 };
+
+// ============================================================
+// Interfaces สำหรับผลประเมิน PDF (ใช้ใน PdfEvaluator component)
+// ============================================================
+
+/** ผลคะแนนแต่ละระดับของ Bloom's Taxonomy */
+export interface BloomLevel {
+  score: number;
+  found_indicators: string[];
+  verdict: string;
+}
+
+/** ผลการประเมินคุณภาพ PDF ทั้งหมด */
+export interface PdfEvaluation {
+  content_length: {
+    word_count: number;
+    page_estimate: number;
+    verdict: string;
+    detail: string;
+  };
+  bloom_taxonomy: Record<string, BloomLevel>;
+  exam_readiness: {
+    estimated_questions: number;
+    target_questions: number;
+    is_sufficient: boolean;
+    detail: string;
+  };
+  overall: {
+    quality_score: number;
+    is_passed: boolean;
+    verdict: string;
+    recommendations: string[];
+  };
+}
+
+/** Response wrapper จาก backend */
+export interface PdfEvaluationResponse {
+  evaluation: PdfEvaluation;
+}

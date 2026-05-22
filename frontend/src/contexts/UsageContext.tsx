@@ -38,7 +38,7 @@ interface UsageContextType {
 const defaultUsage: UsageData = {
   used: 0,
   paidTokensUsed: 0,
-  limit: 50000,
+  limit: 100000, // ต้องตรงกับ DEFAULT_MAX_TOKENS ฝั่ง Backend (100k)
   percentage: 0,
   state: 'normal',
   isByok: false,

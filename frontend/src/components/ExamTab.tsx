@@ -12,10 +12,9 @@ export interface ExamConfig {
 interface ExamTabProps {
   course_name: string;
   OnGenerate: (config: ExamConfig) => void;
-  OnMockResult?: () => void;
 }
 
-export function ExamTab({ course_name, OnGenerate, OnMockResult }: ExamTabProps) {
+export function ExamTab({ course_name, OnGenerate }: ExamTabProps) {
   const { canGenerate } = useUsage();
 
   // กดปุ่มแล้วเจนข้อสอบระดับทั่วไปทันที ไม่ต้องให้ผู้ใช้เลือก
@@ -61,16 +60,6 @@ export function ExamTab({ course_name, OnGenerate, OnMockResult }: ExamTabProps)
         >
           Generate Exam
         </button>
-
-        {/* ปุ่ม Mock Result สำหรับการพัฒนา (Dev only) */}
-        {OnMockResult && (
-          <button
-            onClick={OnMockResult}
-            className="px-10 py-4 border-2 border-[#8c8cf3]/40 text-[#8c8cf3] bg-white rounded-xl font-bold text-lg hover:bg-[#8c8cf3]/5 active:scale-95 transition-all"
-          >
-            Mock Result
-          </button>
-        )}
       </div>
     </div>
   );

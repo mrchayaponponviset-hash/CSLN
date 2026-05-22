@@ -83,6 +83,15 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
   const drag_counter = useRef(0);
   const [is_dragging, set_is_dragging] = useState(false);
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '0px';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [input]);
+
   const HandleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       set_attached_file(e.target.files[0]);
@@ -280,6 +289,9 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
     setMessages([...displayMessages, { role: 'assistant', content: "", animate: true }]);
     
     setInput("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
     set_attached_file(null); // ล้างไฟล์แนบ
     if (file_input_ref.current) file_input_ref.current.value = '';
     
@@ -527,6 +539,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
             )}
 
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -603,7 +616,7 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
 
             {/* ข้อความชื่อบทเรียนและยินดีต้อนรับ */}
             <div className="text-center space-y-4 max-w-2xl px-4 shrink-0">
-              <h3 className="text-xl sm:text-2xl lg:text-3xl font-black text-white/90 tracking-wider uppercase drop-shadow-2xl break-words whitespace-normal">
+              <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold font-english text-white/90 tracking-tight drop-shadow-2xl break-words whitespace-normal">
                 {courseName}
               </h3>
               <div className="text-white/70 text-[14px] sm:text-[15px] leading-relaxed font-medium px-4">
@@ -638,9 +651,9 @@ export function InlineAIChat({ courseName, currentLesson, initialTopic, external
         ) : (
           /* 💬 CASE B: เมื่อส่งข้อความโต้ตอบกันแล้ว (สลับมาแสดงประวัติคำสนทนา พร้อมหน้าต่างเลื่อนขึ้นลงปกติ) */
           <div className="h-full relative overflow-hidden bg-black/5">
-            {/* กล่องสีม่วงทับลูกศร Scrollbar */}
-            <div className="absolute top-0 right-0 w-[14px] h-[12px] bg-[#8c8cf3] z-10 pointer-events-none" />
-            <div className="absolute bottom-0 right-0 w-[14px] h-[12px] bg-[#8c8cf3] z-10 pointer-events-none" />
+            {/* กล่องสีม่วงทับลูกศร Scrollbar - ปรับความกว้างเป็น w-[18px] เพื่อครอบคลุมและปิดบังปุ่มลูกศรสกรอลล์บาร์ขนาด 14px ตัวใหม่ได้อย่างมิดชิด */}
+            <div className="absolute top-0 right-0 w-[18px] h-[12px] bg-[#8c8cf3] z-10 pointer-events-none" />
+            <div className="absolute bottom-0 right-0 w-[18px] h-[12px] bg-[#8c8cf3] z-10 pointer-events-none" />
 
             {/* #2 — ปุ่ม Scroll to Bottom (แสดงเมื่อ scroll ขึ้นไป) */}
             {!is_at_bottom && (

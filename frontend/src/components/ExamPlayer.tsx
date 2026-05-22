@@ -23,10 +23,9 @@ interface ExamPlayerProps {
   courseName?: string;
   userId?: string;
   onGenerateMore?: (config: { mode: "general" | "difficult" | "bloom", bloom_levels: string[], instruction: string }) => Promise<void>;
-  initialIsSubmitted?: boolean;
 }
 
-export function ExamPlayer({ questions, OnClose, topics: course_topics, courseName, userId, onGenerateMore, initialIsSubmitted = false }: ExamPlayerProps) {
+export function ExamPlayer({ questions, OnClose, topics: course_topics, courseName, userId, onGenerateMore }: ExamPlayerProps) {
   const [current_idx, set_current_idx] = useState(0);
   const [selected_option, set_selected_option] = useState<number | null>(null);
   const [user_answers, set_user_answers] = useState<(number | null)[]>(() => Array(questions.length).fill(null));
@@ -43,15 +42,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
     });
   }, [questions]);
 
-  useEffect(() => {
-    if (initialIsSubmitted && questions.length > 0) {
-      // คำนวณคะแนนสำหรับ Mock Data โดยอัตโนมัติ
-      const mockAnswers = Array(questions.length).fill(null).map((_, i) => i % 2 === 0 ? questions[i].correct_answer : (questions[i].correct_answer + 1) % 4);
-      CalculateScore(mockAnswers);
-    }
-  }, [initialIsSubmitted, questions]);
-
-  const [is_submitted, set_is_submitted] = useState(initialIsSubmitted);
+  const [is_submitted, set_is_submitted] = useState(false);
   const [final_score, set_final_score] = useState(0);
   const [result_data, set_result_data] = useState<any>(null);
   
@@ -101,7 +92,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   const [is_reviewing, set_is_reviewing] = useState(false);
   const [is_viewing_analysis, set_is_viewing_analysis] = useState(false);
 
-  // การตั้งค่าสำหรับการสร้างข้อสอบบทถัดไป
+  // การตั้งค่าสำหรับการสร้างข้อสอบเพื่อดำเนินการต่อ
   const [exam_mode, set_exam_mode] = useState<"general" | "difficult" | "bloom">("general");
   const [selected_bloom_levels, set_selected_bloom_levels] = useState<string[]>([]);
 
@@ -336,7 +327,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
         {/* ส่วนหัวหน้าเฉลย - ปรับมาใช้ระบบ Grid เดียวกับหน้าข้อสอบ px-6 md:px-8 lg:px-14 เพื่อความสมบูรณ์แบบ */}
         <div className="flex items-center justify-between px-6 md:px-8 lg:px-14 py-4 border-b border-gray-100 shrink-0 sticky top-0 bg-white/80 backdrop-blur-md z-10">
           <div>
-            <h2 className="text-xl font-bold text-[var(--color-black)]">Review Answers</h2>
+            <h2 className="text-xl font-bold font-english tracking-tight text-[var(--color-black)]">Review Answers</h2>
             <p className="text-xs font-bold text-[var(--color-gray-400)] uppercase tracking-widest mt-0.5">Exam Final Check</p>
           </div>
           <button 
@@ -351,15 +342,15 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
           </button>
         </div>
         
-        {/* คอนเทนเนอร์หน้าเฉลย - ขยับสกรอลล์บาร์สีม่วงเยื้องซ้าย pr-5 พร้อมกล่องสีขาวปิดทับลูกศรหัวท้าย */}
-        <div className="flex-1 min-h-0 overflow-hidden relative pr-5">
-          {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านบน */}
-          <div className="absolute top-0 right-5 w-[14px] h-[10px] bg-white z-[60] pointer-events-none" />
-          {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านล่าง */}
-          <div className="absolute bottom-0 right-5 w-[14px] h-[10px] bg-white z-[60] pointer-events-none" />
+        {/* คอนเทนเนอร์หน้าเฉลย - เอา padding-right pr-5 ออก เพื่อส่งผลให้สกรอลล์บาร์สีม่วงขยับไปแนบชิดขอบขวาสุดของพื้นที่กล่อง */}
+        <div className="flex-1 min-h-0 overflow-hidden relative">
+          {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านบน - ขยับขวาไปที่ right-0 และขยายขนาด w-[18px] เพื่อปิดทับสกรอลล์บาร์ขนาด 14px ได้พอดี */}
+          <div className="absolute top-0 right-0 w-[18px] h-[10px] bg-white z-[60] pointer-events-none" />
+          {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านล่าง - ขยับขวาไปที่ right-0 และขยายขนาด w-[18px] */}
+          <div className="absolute bottom-0 right-0 w-[18px] h-[10px] bg-white z-[60] pointer-events-none" />
 
-          {/* ปรับสกรอลล์คอนเทนเนอร์เป็น premium-scrollbar และจัดแนว Padding ให้สมมาตรรับกับตัวสกรอลล์บาร์เยื้องซ้าย */}
-          <div className="absolute inset-0 overflow-y-auto premium-scrollbar pl-6 md:pl-8 lg:pl-14 pr-1 md:pr-3 lg:pr-[36px] py-8 pb-16">
+          {/* สกรอลล์คอนเทนเนอร์ - ลบ pr-[36px] ออก และจัด padding ขวา (pr-4 md:pr-6 lg:pr-8) ให้สมดุลสวยงามไม่ชนสกรอลล์บาร์ */}
+          <div className="absolute inset-0 overflow-y-auto premium-scrollbar pl-6 md:pl-8 lg:pl-14 pr-4 md:pr-6 lg:pr-8 py-8 pb-16">
             <div className="max-w-3xl mx-auto space-y-8">
             {questions.map((q, idx) => {
               const userAnswer = user_answers[idx];
@@ -439,9 +430,10 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   if (is_submitted && is_viewing_analysis) {
     return (
       <div className="h-full flex flex-col bg-white animate-in fade-in duration-700">
-        <div className="flex items-center justify-between px-6 md:px-8 py-4 border-b border-gray-100 shrink-0 sticky top-0 bg-white/80 backdrop-blur-md z-10">
+        {/* ส่วนหัวหน้าวิเคราะห์ AI - ปรับปรุงมาใช้ระบบ Grid เดียวกับแท็บเนื้อหาหลัก (px-6 md:px-8 lg:px-14) เพื่อให้ปุ่ม X และหัวข้อเรียงตัวตรงเส้นแบ่งแท็บ ไม่ยื่นขยายเลยออกนอกกรอบ */}
+        <div className="flex items-center justify-between px-6 md:px-8 lg:px-14 py-4 border-b border-gray-100 shrink-0 sticky top-0 bg-white/80 backdrop-blur-md z-10">
           <div>
-            <h2 className="text-xl font-bold text-[var(--color-black)]">AI Personal Recommendation</h2>
+            <h2 className="text-xl font-bold font-english tracking-tight text-[var(--color-black)]">AI Personal Recommendation</h2>
             <p className="text-xs font-bold text-[var(--color-gray-400)] uppercase tracking-widest mt-0.5">วิเคราะห์เจาะลึกเฉพาะบุคคล</p>
           </div>
           {/* ปรับปรุงปุ่ม Back to Summary ในหน้า AI Analysis: เปลี่ยนจากปุ่มข้อความปกติเป็นไอคอนปิด "X" (Close SVG Icon) เพื่อความกลมกลืนและสอดคล้องกับหน้าเฉลยอื่นๆ */}
@@ -457,15 +449,15 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
           </button>
         </div>
         
-        {/* คอนเทนเนอร์หน้าวิเคราะห์ AI - ขยับสกรอลล์บาร์สีม่วงเยื้องซ้าย pr-5 พร้อมกล่องสีขาวปิดทับลูกศรหัวท้ายตามสูตรเดิม */}
-        <div className="flex-1 min-h-0 overflow-hidden relative pr-5">
-          {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านบน */}
-          <div className="absolute top-0 right-5 w-[14px] h-[10px] bg-white z-[60] pointer-events-none" />
-          {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านล่าง */}
-          <div className="absolute bottom-0 right-5 w-[14px] h-[10px] bg-white z-[60] pointer-events-none" />
+        {/* คอนเทนเนอร์หน้าวิเคราะห์ AI - เอา pr-5 ออกเพื่อให้แถบเลื่อนสกรอลล์บาร์สีม่วงเกาะติดขอบริมขวาสุดของกรอบหลัก */}
+        <div className="flex-1 min-h-0 overflow-hidden relative">
+          {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านบน - ปรับชิดริมขวา right-0 และปรับขนาด w-[18px] ให้ครอบคลุมสกรอลล์บาร์ขนาดใหม่ */}
+          <div className="absolute top-0 right-0 w-[18px] h-[10px] bg-white z-[60] pointer-events-none" />
+          {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านล่าง - ปรับชิดริมขวา right-0 และปรับขนาด w-[18px] */}
+          <div className="absolute bottom-0 right-0 w-[18px] h-[10px] bg-white z-[60] pointer-events-none" />
 
-          {/* ปรับสกรอลล์คอนเทนเนอร์เป็น premium-scrollbar และจัดแนว Padding ให้สมมาตรรับกับตัวสกรอลล์บาร์เยื้องซ้าย */}
-          <div className="absolute inset-0 overflow-y-auto premium-scrollbar pl-6 md:pl-12 pr-1 md:pr-[28px] py-8 pb-16">
+          {/* สกรอลล์คอนเทนเนอร์ - ลบ pr-[36px] ออก และตั้งค่าระยะ padding-right (pr-4 md:pr-6 lg:pr-8) เพื่อความเป็นระเบียบและสมมาตรอย่างลงตัว */}
+          <div className="absolute inset-0 overflow-y-auto premium-scrollbar pl-6 md:pl-8 lg:pl-14 pr-4 md:pr-6 lg:pr-8 py-8 pb-16">
             <div className="max-w-4xl mx-auto">
               {generatingAnalysis ? (
                 <div className="h-64 flex flex-col items-center justify-center gap-6 mt-10">
@@ -503,10 +495,72 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                     </button>
                   </div>
 
-                  {/* ส่วนแสดงระดับพฤติกรรมความเข้าใจบลูม (Bloom's Taxonomy) ในรูปแบบหลอดแถบความก้าวหน้า 100% จัดรวมอยู่ในกล่องเดียวกัน */}
+                  {/* ส่วนแสดงคะแนนรวมและกราฟ Radar Chart ของ Bloom's Taxonomy */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    {/* คอลัมน์ซ้าย: คะแนนรวม (Score Card) */}
+                    <div className="lg:col-span-5">
+                      <div className="bg-white/60 backdrop-blur-sm rounded-[24px] p-6 border border-gray-200/50 h-full flex flex-col items-center justify-center">
+                        <p className="text-xs font-bold text-[var(--color-gray-400)] uppercase tracking-widest mb-4 font-bai-jamjuree">ผลคะแนนรวม</p>
+                        
+                        {(() => {
+                          const score_percentage = (final_score / questions.length) * 100;
+                          return (
+                            <div className="flex flex-col items-center w-full">
+                              <div className="relative w-[130px] h-[130px] flex items-center justify-center shrink-0 mb-6">
+                                <svg className="w-full h-full -rotate-90" viewBox="0 0 130 130">
+                                  <circle cx="65" cy="65" r="54" fill="none" stroke="var(--color-gray-100)" strokeWidth="10" />
+                                  <circle cx="65" cy="65" r="54" fill="none" stroke="var(--color-primary)" strokeWidth="10" strokeDasharray={339.29} strokeDashoffset={339.29 - (339.29 * score_percentage) / 100} strokeLinecap="round" className="transition-all duration-1000 ease-out" />
+                                </svg>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                  <span className="text-5xl font-black text-[var(--color-black)] leading-none font-bai-jamjuree">{final_score}</span>
+                                  <span className="text-[11px] font-bold text-[var(--color-gray-400)] mt-1.5 font-bai-jamjuree">/ {questions.length}</span>
+                                </div>
+                              </div>
+                              <div className="bg-[var(--color-primary)]/10 px-5 py-2 rounded-full border border-[var(--color-primary)]/20 shadow-sm">
+                                <span className="text-sm font-bold text-[var(--color-primary)] font-bai-jamjuree">
+                                  คุณทำคะแนนได้ {Math.round(score_percentage)}%
+                                </span>
+                              </div>
+                              
+                              {/* รายละเอียดจำนวนข้อถูก/ผิด ด้วยสไตล์สะอาดตา กลมกลืนกับธีมสีม่วง/เทา */}
+                              <div className="mt-6 w-full grid grid-cols-2 gap-3 px-2">
+                                <div className="bg-gray-50/80 rounded-2xl p-3 text-center border border-gray-100/80">
+                                  <p className="text-[11px] font-bold text-[var(--color-gray-500)] font-bai-jamjuree mb-1">ตอบถูก</p>
+                                  <p className="text-2xl font-black text-[var(--color-primary)] font-bai-jamjuree leading-none">{final_score}</p>
+                                </div>
+                                <div className="bg-gray-50/80 rounded-2xl p-3 text-center border border-gray-100/80">
+                                  <p className="text-[11px] font-bold text-[var(--color-gray-500)] font-bai-jamjuree mb-1">ตอบผิด</p>
+                                  <p className="text-2xl font-black text-[var(--color-gray-400)] font-bai-jamjuree leading-none">{questions.length - final_score}</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* คอลัมน์ขวา: กราฟ Radar Chart ของ Bloom's Taxonomy */}
+                    <div className="lg:col-span-7">
+                      <div className="bg-white/60 backdrop-blur-sm rounded-[24px] p-6 border border-gray-200/50 h-full flex flex-col">
+                        <h4 className="text-[11px] font-bold text-[var(--color-gray-400)] uppercase tracking-widest mb-2 w-full text-center shrink-0 font-bai-jamjuree">Bloom&apos;s Taxonomy Analytics</h4>
+                        <div className="w-full flex-1 flex items-center justify-center min-h-[300px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RadarChart cx="50%" cy="50%" outerRadius="75%" data={result_data.chartData}>
+                              <PolarGrid stroke="#e5e7eb" />
+                              <PolarAngleAxis dataKey="subject" tick={{ fill: '#6b7280', fontSize: 11, fontWeight: 'bold' }} />
+                              <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                              <Radar name="Performance" dataKey="A" stroke="var(--color-primary)" fill="var(--color-primary)" fillOpacity={0.25} />
+                            </RadarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ส่วนแสดงระดับพฤติกรรมความเข้าใจบลูม (Bloom's Taxonomy) ย้ายมาด้านล่าง */}
                   <div className="bg-white/60 backdrop-blur-sm rounded-[24px] p-6 border border-gray-200/50">
                     <div className="flex items-center gap-2.5 mb-5">
-                      <div className="w-8 h-8 bg-[#8c8cf3]/10 rounded-lg flex items-center justify-center text-[#8c8cf3] shrink-0">
+                      <div className="w-8 h-8 bg-[var(--color-primary)]/10 rounded-lg flex items-center justify-center text-[var(--color-primary)] shrink-0">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
                       </div>
                       <h4 className="text-sm font-bold text-gray-900 leading-tight font-bai-jamjuree">Bloom's Taxonomy Performance</h4>
@@ -517,14 +571,14 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                         const percentage = Math.round(item.A ?? 0);
                         return (
                           <div key={idx} className="space-y-1.5 font-bai-jamjuree">
-                            <div className="flex justify-between items-center text-xs font-bold text-gray-600">
+                            <div className="flex justify-between items-center text-xs font-bold text-[var(--color-gray-600)]">
                               <span>{item.subject}</span>
-                              <span className="text-[#8c8cf3]">{percentage}%</span>
+                              <span className="text-[var(--color-primary)]">{percentage}%</span>
                             </div>
-                            {/* แถบหลอดความก้าวหน้าแสดงความเชี่ยวชาญแบบ 100% */}
+                            {/* แถบหลอดความก้าวหน้า */}
                             <div className="w-full h-2.5 bg-gray-200/50 rounded-full overflow-hidden relative">
                               <div 
-                                className="h-full bg-gradient-to-r from-[#8c8cf3] to-[#7c7cf2] rounded-full transition-all duration-1000 ease-out"
+                                className="h-full bg-gradient-to-r from-[var(--color-primary)] to-[#7c7cf2] rounded-full transition-all duration-1000 ease-out"
                                 style={{ width: `${percentage}%` }}
                               />
                             </div>
@@ -552,6 +606,27 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   // --- SUMMARY MODE ---
   if (is_submitted && result_data) {
     const percentage = (final_score / questions.length) * 100;
+
+    // ฟังก์ชันแปลโหมดและระดับของข้อสอบเป็นภาษาไทยสำหรับแสดงผลที่หน้าโหลด
+    const GetExamModeLabel = () => {
+      if (exam_mode === "general") return "ทั่วไป";
+      if (exam_mode === "difficult") return "ยาก";
+      if (exam_mode === "bloom") {
+        const bloom_translations: Record<string, string> = {
+          Remember: "ความจำ",
+          Understand: "ความเข้าใจ",
+          Apply: "การประยุกต์ใช้",
+          Analyze: "การวิเคราะห์",
+          Evaluate: "การประเมินค่า",
+          Create: "การสร้างสรรค์"
+        };
+        const translated = selected_bloom_levels
+          .map(level => bloom_translations[level] || level)
+          .join(", ");
+        return `Bloom's Taxonomy (${translated})`;
+      }
+      return "";
+    };
     
     const display_topics = Object.entries(result_data.chapterStats).map(([name, stats]: [string, any]) => ({
       name: name.length > 40 ? name.substring(0, 37) + "..." : name,
@@ -583,14 +658,14 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                   </div>
                   
                   {/* หัวข้อหน้าระหว่าง Generate ข้อสอบ - ปรับขนาดเพื่อให้แสดงในบรรทัดเดียวอย่างสง่างาม */}
-                  <h3 className="text-[17px] sm:text-[19px] md:text-[21px] font-black text-gray-900 tracking-tight text-center mb-4.5 uppercase">
+                  <h3 className="text-[17px] sm:text-[19px] md:text-[21px] font-bold font-english text-gray-900 tracking-tight text-center mb-4.5">
                     Generating Examination
                   </h3>
                   
                   {/* ข้อความจำลองการทำงานของ AI แบบกระพริบเรียลไทม์ (animate-pulse) ตามจริง */}
                   <div className="flex flex-col items-center gap-1 text-center animate-pulse px-2">
                     <span className="text-[11px] sm:text-[12px] font-bold text-[var(--color-primary)] tracking-wider uppercase mb-0.5">
-                      ชุดที่ {Math.floor(questions.length / 5) + 1} (ข้อ {questions.length + 1} - {questions.length + 5})
+                      ชุดที่ {Math.floor(questions.length / 5) + 1} (ข้อ {questions.length + 1} - {questions.length + 5}) - ระดับ: {GetExamModeLabel()}
                     </span>
                     <span className="text-[12.5px] font-medium text-gray-400 leading-relaxed min-h-[38px] max-w-[290px]">
                       {generation_step_text}
@@ -609,7 +684,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                       <line x1="6" y1="6" x2="18" y2="18"></line>
                     </svg>
                   </button>
-                  <h3 className="text-lg font-black text-gray-900 mb-0.5">ตั้งค่าข้อสอบบทถัดไป</h3>
+                  <h3 className="text-lg font-black text-gray-900 mb-0.5">ตั้งค่าข้อสอบเพื่อดำเนินการต่อ</h3>
                   <p className="text-[11px] text-gray-500 mb-3.5">เลือกรูปแบบของข้อสอบ 5 ข้อถัดไปที่ต้องการให้ AI ออกแบบ</p>
                   
                   <div className="space-y-2 mb-3.5">
@@ -695,7 +770,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                               return (
                                 <div key={item.key} className="flex justify-between border-b border-gray-50 pb-0.5">
                                   <span>{item.label}:</span>
-                                  <span className="font-black text-[var(--color-primary)]">{score}%</span>
+                                  <span className="font-black text-[var(--color-primary)] font-english">{score}%</span>
                                 </div>
                               );
                             })}
@@ -857,7 +932,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                 </button>
               </div>
 
-              {/* ปุ่ม บทถัดไป / สรุปผลลัพธ์ด้วย AI อยู่ใน lg:col-span-7 เท่ากับกล่องทางขวา */}
+              {/* ปุ่ม ดำเนินการต่อ / สรุปผลลัพธ์ด้วย AI อยู่ใน lg:col-span-7 เท่ากับกล่องทางขวา */}
               <div className="lg:col-span-7">
                 {questions.length >= 40 ? (
                   /* เปลี่ยนสไตล์เป็นปุ่ม Secondary Button (มีเส้นขอบและตัวอักษรสีม่วง) ตามความต้องการของผู้ใช้ เพื่อไม่ให้แย่งความเด่นจากปุ่มหลัก */
@@ -868,13 +943,13 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                     สรุปผลลัพธ์ด้วย AI
                   </button>
                 ) : (
-                  /* แสดงปุ่มบทถัดไปหากข้อสอบยังทำไม่ครบ 40 ข้อ */
+                  /* แสดงปุ่มดำเนินการต่อหากข้อสอบยังทำไม่ครบ 40 ข้อ */
                   onGenerateMore && (
                     <button 
                       onClick={() => set_show_prompt_modal(true)}
                       className="w-full py-4 border-2 border-[#8c8cf3]/40 text-[#8c8cf3] hover:bg-[#8c8cf3]/10 active:scale-95 rounded-2xl font-bold text-[16px] transition-all flex items-center justify-center gap-2"
                     >
-                      บทถัดไป
+                      ดำเนินการต่อ
                     </button>
                   )
                 )}
@@ -893,19 +968,20 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
   const active_questions = questions.slice(batch_start_idx, batch_start_idx + 5);
   const current_batch_answers = user_answers.slice(batch_start_idx, batch_start_idx + 5);
   
-  const answeredCount = current_batch_answers.filter(a => a !== null).length;
-  const progressPercent = (answeredCount / 5) * 100;
+  const current_batch_answered_count = current_batch_answers.filter(a => a !== null).length;
+  const total_answered_count = user_answers.filter(a => a !== null).length;
+  const progressPercent = (current_batch_answered_count / 5) * 100;
   const is_batch_empty = current_batch_answers.every(a => a === null);
 
   return (
-    <div className="h-full flex flex-col bg-white animate-in fade-in duration-700 overflow-hidden relative">
+    <div className="h-full flex flex-col bg-white animate-in fade-in duration-700 overflow-hidden relative font-bai-jamjuree">
       {/* ส่วนหัวของหน้าข้อสอบ - ปรับปรุงมาใช้ระบบ Grid เดียวกับแท็บเนื้อหาหลักด้านบน (px-6 md:px-8 lg:px-14) เพื่อความสมมาตรแบบ 100% */}
       <div className="border-b border-gray-100 z-10 bg-white shadow-sm shrink-0 px-6 md:px-8 lg:px-14">
         <div className="max-w-4xl mx-auto w-full flex items-center justify-between py-3.5">
           <div>
-            <h2 className="text-lg font-bold text-[var(--color-black)] leading-tight">Course Examination</h2>
+            <h2 className="text-lg font-bold font-english tracking-tight text-[var(--color-black)] leading-tight">Course Examination</h2>
             <p className="text-[10px] font-bold text-[var(--color-gray-400)] uppercase tracking-widest mt-0.5">
-              Answered {answeredCount} of 5 Questions (Batch {Math.floor(batch_start_idx / 5) + 1} / 8)
+              Answered {total_answered_count} of {questions.length} Questions
             </p>
           </div>
           <button onClick={OnClose} className="p-2 text-[var(--color-gray-400)] hover:bg-gray-50 rounded-full transition-colors active:scale-90">
@@ -926,21 +1002,21 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-hidden bg-white pr-5">
-        {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านบน */}
-        <div className="absolute top-0 right-5 w-[14px] h-[10px] bg-white z-10 pointer-events-none" />
-        {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านล่าง */}
-        <div className="absolute bottom-0 right-5 w-[14px] h-[10px] bg-white z-10 pointer-events-none" />
+      {/* คอนเทนเนอร์ข้อสอบปกติ - เอา pr-5 ออก เพื่อขยับแถบเลื่อนสีม่วงหลักไปติดขอบขวาสุดอย่างเต็มพื้นที่ */}
+      <div className="relative flex-1 overflow-hidden bg-white">
+        {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านบน - ขยับไปที่ right-0 และขยายขนาด w-[18px] เพื่อป้องกันความไม่เรียบร้อยและทับซ้อนลูกศรใหม่ */}
+        <div className="absolute top-0 right-0 w-[18px] h-[10px] bg-white z-10 pointer-events-none" />
+        {/* กล่องสีขาวเล็กๆ ทับลูกศรด้านล่าง - ขยับไปที่ right-0 และขยายขนาด w-[18px] */}
+        <div className="absolute bottom-0 right-0 w-[18px] h-[10px] bg-white z-10 pointer-events-none" />
 
-        {/* ปรับสกรอลล์คอนเทนเนอร์ - ใช้ pl-6 md:pl-8 lg:pl-14 และคำนวณหักลบ pr-5 ของสกรอลล์บาร์ด้วย pr-1 md:pr-3 lg:pr-[36px] เพื่อให้ได้ความสมมาตรซ้ายขวาพอดีเป๊ะ */}
-        <div className="h-full overflow-y-auto pl-6 md:pl-8 lg:pl-14 pr-1 md:pr-3 lg:pr-[36px] py-6 flex flex-col premium-scrollbar">
+        {/* สกรอลล์คอนเทนเนอร์ - ลบ pr-[36px] ออก และกำหนดระยะห่างขวา (pr-4 md:pr-6 lg:pr-8) เพื่อให้ข้อมูลไม่อัดแน่นเกินไป */}
+        <div className="h-full overflow-y-auto pl-6 md:pl-8 lg:pl-14 pr-4 md:pr-6 lg:pr-8 py-6 flex flex-col premium-scrollbar">
           <div className="max-w-4xl mx-auto w-full flex-1 flex flex-col">
           {active_questions.map((q, local_idx) => {
             const q_idx = batch_start_idx + local_idx;
             return (
               <div key={q_idx} className="bg-white border border-gray-200 rounded-2xl p-6 md:p-8 mb-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                <h3 className="text-[16px] md:text-[18px] font-normal text-[var(--color-black)] leading-relaxed mb-4">
-                  {q_idx + 1}. {q.question}
+                <h3 className="text-[16px] md:text-[18px] font-normal text-[var(--color-black)] leading-relaxed mb-4 font-bai-jamjuree"><span className="font-english">{q_idx + 1}.</span> {q.question}
                 </h3>
 
                 <div className="flex flex-col gap-3">
@@ -963,7 +1039,7 @@ export function ExamPlayer({ questions, OnClose, topics: course_topics, courseNa
                         }`}>
                           {is_selected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                         </div>
-                        <span className={`text-[14px] md:text-[15px] leading-relaxed transition-colors ${
+                        <span className={`text-[14px] md:text-[15px] leading-relaxed transition-colors font-bai-jamjuree ${
                           is_selected ? "text-[#8c8cf3]" : "text-gray-700"
                         }`}>
                           <span className="mr-2 font-mono font-medium text-gray-400">{letters[o_idx]}</span>

@@ -1,55 +1,67 @@
+'use client';
+
+import { useState, useEffect } from 'react';
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { useParams } from 'next/navigation';
 import courses_data from "@/data/courses.json";
 import { AuthNavbar } from "@/components/AuthNavbar";
 import { CourseRow } from "@/components/CourseRow";
+import PdfEvaluator from "@/components/PdfEvaluator";
 
-/* ===== Type สำหรับ Page Params ===== */
-interface YearPageProps {
-  params: Promise<{ number: string }>;
+// ============================================================
+// Type สำหรับข้อมูลผู้ใช้ (ดึง userId จาก Supabase Auth)
+// ============================================================
+
+/** ดึง userId จาก localStorage (Supabase Auth session) */
+function GetUserId(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    // Supabase Auth เก็บ session ใน localStorage
+    const storage_keys = Object.keys(localStorage);
+    const auth_key = storage_keys.find((k) => k.startsWith('sb-') && k.endsWith('-auth-token'));
+    if (auth_key) {
+      const raw = localStorage.getItem(auth_key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return parsed?.user?.id || undefined;
+      }
+    }
+  } catch {
+    // ไม่มี session — ใช้ anonymous
+  }
+  return undefined;
 }
 
-/**
- * generateStaticParams — สร้าง Static pages สำหรับทั้ง 4 ชั้นปี
- */
-export function generateStaticParams() {
-  return [
-    { number: "1" },
-    { number: "2" },
-    { number: "3" },
-    { number: "4" },
-  ];
-}
+// ============================================================
+// YearPage — หน้ารายวิชาของแต่ละชั้นปี (Client Component)
+// เปลี่ยนเป็น Client Component เพื่อรองรับ PdfEvaluator ที่ต้องใช้ state
+// ============================================================
 
-/**
- * generateMetadata — SEO metadata แต่ละชั้นปี
- */
-export async function generateMetadata({ params }: YearPageProps) {
-  const { number } = await params;
-  const year_number = parseInt(number);
-  
-  if (!courses_data || !courses_data.years) return { title: "Error — CSLearning" };
-  
-  const year_data = courses_data.years.find((y) => y.year === year_number);
+export default function YearPage() {
+  const params = useParams();
+  const number = params?.number as string;
+  const year_number = parseInt(number || '0');
 
-  if (!year_data) return { title: "Not Found — CSLearning" };
+  // ดึง userId สำหรับ Token Quota tracking
+  const [user_id, SetUserId] = useState<string | undefined>(undefined);
 
-  return {
-    title: `Year ${year_data.year} — ${year_data.subtitle} | CSLearning`,
-    description: `${year_data.courses.length} courses for Year ${year_data.year} — ${year_data.subtitle}`,
-  };
-}
-
-/**
- * YearPage — หน้ารายวิชาของแต่ละชั้นปี (Option A: Clean List)
- */
-export default async function YearPage({ params }: YearPageProps) {
-  const { number } = await params;
-  const year_number = parseInt(number);
+  useEffect(() => {
+    SetUserId(GetUserId());
+  }, []);
 
   /* ค้นหาข้อมูลชั้นปี */
   const year_data = courses_data?.years?.find((y) => y.year === year_number);
-  if (!year_data) notFound();
+
+  // ถ้าไม่พบข้อมูลชั้นปี
+  if (!year_data) {
+    return (
+      <main className="h-screen w-screen bg-transparent flex flex-col items-center justify-center">
+        <AuthNavbar />
+        <p className="text-[var(--color-gray-500)]">ไม่พบข้อมูลชั้นปีที่ {year_number}</p>
+        <Link href="/#years" className="text-[var(--color-primary)] mt-4 hover:underline">กลับหน้าแรก</Link>
+      </main>
+    );
+  }
 
   const total_chapters = year_data.courses.reduce((sum, c) => sum + c.chapters, 0);
 
@@ -115,6 +127,9 @@ export default async function YearPage({ params }: YearPageProps) {
                 );
               })}
             </div>
+
+            {/* ===== PDF Evaluator — ส่วนประเมินคุณภาพเนื้อหา PDF ===== */}
+            <PdfEvaluator user_id={user_id} />
           </div>
         </div>
       </div>
