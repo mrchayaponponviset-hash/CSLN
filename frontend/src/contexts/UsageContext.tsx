@@ -6,6 +6,7 @@ import { apiService } from '@/services/api';
 
 interface UsageData {
   used: number;
+  paidTokensUsed: number;
   limit: number;
   percentage: number;
   state: 'normal' | 'warning' | 'critical' | 'exceeded';
@@ -36,6 +37,7 @@ interface UsageContextType {
 
 const defaultUsage: UsageData = {
   used: 0,
+  paidTokensUsed: 0,
   limit: 50000,
   percentage: 0,
   state: 'normal',
@@ -82,6 +84,7 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
       setUsage(prev => ({
         ...prev,
         used: data.used,
+        paidTokensUsed: data.paidTokensUsed || 0,
         limit: data.limit,
         percentage,
         state,
@@ -96,11 +99,12 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
   }, [user, calculateState]);
 
   // Live update from streaming responses
-  const updateFromStream = useCallback((data: { used: number; limit: number }) => {
+  const updateFromStream = useCallback((data: { used: number; limit: number; paidTokensUsed?: number }) => {
     const { percentage, state } = calculateState(data.used, data.limit);
     setUsage(prev => ({
       ...prev,
       used: data.used,
+      paidTokensUsed: data.paidTokensUsed ?? prev.paidTokensUsed,
       limit: data.limit,
       percentage,
       state,

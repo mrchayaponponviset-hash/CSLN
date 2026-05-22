@@ -89,11 +89,19 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [verifying, setVerifying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [message, setMessage] = useState<{
-    type: "success" | "error" | "info";
-    text: string;
-  } | null>(null);
+  const [keySuccess, setKeySuccess] = useState<string | null>(null);
+  const [keyError, setKeyError] = useState<string | null>(null);
   const [showConfirmRemove, setShowConfirmRemove] = useState(false);
+
+  // Validate OpenRouter key format
+  const validateKey = (key: string): string | null => {
+    const trimmed = key.trim();
+    if (!trimmed) return "กรุณากรอก API Key";
+    if (!/^[\x00-\x7F]*$/.test(trimmed)) return "API Key ต้องไม่มีภาษาไทยหรืออักขระพิเศษแปลกปลอม";
+    if (!trimmed.startsWith("sk-or-v1-")) return "รูปแบบ Key ไม่ถูกต้อง — ต้องขึ้นต้นด้วย sk-or-v1-";
+    if (trimmed.length < 40) return "API Key สั้นเกินไป — กรุณาตรวจสอบว่า Copy ครบหรือไม่";
+    return null;
+  };
 
   // Fetch status & models on open
   const fetchData = useCallback(async () => {
@@ -118,27 +126,40 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     if (isOpen && user?.uid) fetchData();
   }, [isOpen, user?.uid, fetchData]);
 
-  // Clear message after 5s
+  // Clear success message after 5s
   useEffect(() => {
-    if (message) {
-      const t = setTimeout(() => setMessage(null), 5000);
+    if (keySuccess) {
+      const t = setTimeout(() => setKeySuccess(null), 5000);
       return () => clearTimeout(t);
     }
-  }, [message]);
+  }, [keySuccess]);
 
   // Handlers
   const handleVerifyAndSave = async () => {
-    if (!user?.uid || !apiKeyInput.trim()) return;
+    if (!user?.uid) return;
     const key = apiKeyInput.trim();
 
-    // Step 1: Verify
+    // Client-side format validation first
+    const formatError = validateKey(key);
+    if (formatError) {
+      setKeyError(formatError);
+      setApiKeyInput("");
+      document.getElementById("api-key-input")?.focus();
+      return;
+    }
+    setKeyError(null);
+
+    // Step 1: Verify with backend
     setVerifying(true);
-    setMessage(null);
+    setKeySuccess(null);
+    setKeyError(null);
     const verifyRes = await apiService.verifyByokKey(key);
     setVerifying(false);
 
     if (!verifyRes.valid) {
-      setMessage({ type: "error", text: verifyRes.message });
+      setKeyError(verifyRes.message);
+      setApiKeyInput("");
+      document.getElementById("api-key-input")?.focus();
       return;
     }
 
@@ -148,14 +169,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setSaving(false);
 
     if (!saveRes.success) {
-      setMessage({
-        type: "error",
-        text: saveRes.error || "ไม่สามารถบันทึก Key ได้",
-      });
+      setKeyError(saveRes.error || "ไม่สามารถบันทึก Key ได้");
+      setApiKeyInput("");
+      document.getElementById("api-key-input")?.focus();
       return;
     }
 
-    setMessage({ type: "success", text: "✓ API Key ยืนยันและบันทึกสำเร็จ!" });
+    setKeySuccess("API Key ยืนยันและบันทึกสำเร็จ!");
     setApiKeyInput("");
     await fetchData();
     await refreshUsage();
@@ -167,7 +187,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     await apiService.removeByokKey(user.uid);
     setRemoving(false);
     setShowConfirmRemove(false);
-    setMessage({ type: "info", text: "ลบ API Key เรียบร้อยแล้ว" });
+    setKeySuccess("ลบ API Key เรียบร้อยแล้ว");
     await fetchData();
     await refreshUsage();
   };
@@ -176,21 +196,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     if (!user?.uid) return;
     const model = models.find((m) => m.id === modelId);
     if (model?.locked) {
-      setMessage({
-        type: "error",
-        text: "ต้องเพิ่ม API Key ก่อนถึงจะใช้ Premium Model ได้",
-      });
-      // เลื่อนโฟกัสไปที่ช่องกรอก API Key
+      setKeyError("ต้องเพิ่ม API Key ก่อนถึงจะใช้ Premium Model ได้");
       document.getElementById("api-key-input")?.focus();
       return;
     }
+    setKeyError(null);
+    setKeySuccess(null);
     setActiveModel(modelId);
     const res = await apiService.setByokModel(user.uid, modelId);
     if (!res.success) {
-      setMessage({
-        type: "error",
-        text: res.error || "ไม่สามารถเปลี่ยน Model ได้",
-      });
+      setKeyError(res.error || "ไม่สามารถเปลี่ยน Model ได้");
       await fetchData();
     } else {
       await refreshUsage();
@@ -304,26 +319,45 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       <p className="text-xs font-medium text-[var(--color-gray-400)] mb-2">
                         เปลี่ยน Key ใหม่
                       </p>
-                      <div className="flex gap-2">
-                        <input
-                          id="api-key-input"
-                          type="password"
-                          value={apiKeyInput}
-                          onChange={(e) => setApiKeyInput(e.target.value)}
-                          placeholder="sk-or-v1-..."
-                          className="flex-1 px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent font-mono"
-                        />
-                        <button
-                          onClick={handleVerifyAndSave}
-                          disabled={isProcessing || !apiKeyInput.trim()}
-                          className="px-4 py-2 text-xs font-bold text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-dark)] rounded-xl transition-colors disabled:opacity-50 whitespace-nowrap"
-                        >
-                          {verifying
-                            ? "Verifying..."
-                            : saving
-                            ? "Saving..."
-                            : "Update"}
-                        </button>
+                      <div className="space-y-1.5">
+                        <div className="flex gap-2">
+                          <input
+                            id="api-key-input"
+                            type="password"
+                            value={apiKeyInput}
+                            onChange={(e) => { setApiKeyInput(e.target.value); setKeyError(null); }}
+                            onKeyDown={(e) => e.key === 'Enter' && handleVerifyAndSave()}
+                            placeholder="sk-or-v1-..."
+                            className={`flex-1 px-3 py-2 text-sm bg-gray-50 border rounded-xl focus:outline-none focus:ring-2 focus:border-transparent font-mono transition-colors ${
+                              keyError
+                                ? "border-red-400 focus:ring-red-300 bg-red-50"
+                                : "border-gray-200 focus:ring-[var(--color-primary)]"
+                            }`}
+                          />
+                          <button
+                            onClick={handleVerifyAndSave}
+                            disabled={isProcessing || !apiKeyInput.trim()}
+                            className="px-4 py-2 text-xs font-bold text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-dark)] rounded-xl transition-colors disabled:opacity-50 whitespace-nowrap"
+                          >
+                            {verifying ? "Verifying..." : saving ? "Saving..." : "Update"}
+                          </button>
+                        </div>
+                        {keyError && (
+                          <div className="mt-2 text-xs text-red-600 font-medium flex items-start gap-1.5 bg-red-50 p-2.5 rounded-xl border border-red-100 leading-snug animate-fade-in">
+                            <svg className="w-4 h-4 shrink-0 mt-0.5 text-red-600" fill="none" strokeWidth="2" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                            </svg>
+                            {keyError}
+                          </div>
+                        )}
+                        {keySuccess && (
+                          <div className="mt-2 text-xs text-emerald-700 font-medium flex items-center gap-1.5 bg-emerald-50 p-2.5 rounded-xl border border-emerald-100 animate-fade-in">
+                            <svg className="w-4 h-4 shrink-0 text-emerald-600" fill="none" strokeWidth="2" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                            </svg>
+                            {keySuccess}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -342,26 +376,45 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         openrouter.ai/keys
                       </a>
                     </p>
-                    <div className="flex gap-2">
-                      <input
-                        id="api-key-input"
-                        type="password"
-                        value={apiKeyInput}
-                        onChange={(e) => setApiKeyInput(e.target.value)}
-                        placeholder="sk-or-v1-..."
-                        className="flex-1 px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent font-mono"
-                      />
-                      <button
-                        onClick={handleVerifyAndSave}
-                        disabled={isProcessing || !apiKeyInput.trim()}
-                        className="px-5 py-2.5 text-sm font-bold text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-dark)] rounded-xl transition-all disabled:opacity-50 shadow-[0_3px_0_0_rgba(100,90,240,1)] hover:shadow-[0_4px_0_0_rgba(100,90,240,1)] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none whitespace-nowrap"
-                      >
-                        {verifying
-                          ? "Verifying..."
-                          : saving
-                          ? "Saving..."
-                          : "Verify & Save"}
-                      </button>
+                    <div className="space-y-1.5">
+                      <div className="flex gap-2">
+                        <input
+                          id="api-key-input"
+                          type="password"
+                          value={apiKeyInput}
+                          onChange={(e) => { setApiKeyInput(e.target.value); setKeyError(null); }}
+                          onKeyDown={(e) => e.key === 'Enter' && handleVerifyAndSave()}
+                          placeholder="sk-or-v1-..."
+                          className={`flex-1 px-3 py-2.5 text-sm bg-gray-50 border rounded-xl focus:outline-none focus:ring-2 focus:border-transparent font-mono transition-colors ${
+                            keyError
+                              ? "border-red-400 focus:ring-red-300 bg-red-50"
+                              : "border-gray-200 focus:ring-[var(--color-primary)]"
+                          }`}
+                        />
+                        <button
+                          onClick={handleVerifyAndSave}
+                          disabled={isProcessing || !apiKeyInput.trim()}
+                          className="px-5 py-2.5 text-sm font-bold text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-dark)] rounded-xl transition-all disabled:opacity-50 shadow-[0_3px_0_0_rgba(100,90,240,1)] hover:shadow-[0_4px_0_0_rgba(100,90,240,1)] hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-none whitespace-nowrap"
+                        >
+                          {verifying ? "Verifying..." : saving ? "Saving..." : "Verify & Save"}
+                        </button>
+                      </div>
+                      {keyError && (
+                          <div className="mt-2 text-xs text-red-600 font-medium flex items-start gap-1.5 bg-red-50 p-2.5 rounded-xl border border-red-100 leading-snug animate-fade-in">
+                            <svg className="w-4 h-4 shrink-0 mt-0.5 text-red-600" fill="none" strokeWidth="2" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                            </svg>
+                            {keyError}
+                          </div>
+                        )}
+                        {keySuccess && (
+                          <div className="mt-2 text-xs text-emerald-700 font-medium flex items-center gap-1.5 bg-emerald-50 p-2.5 rounded-xl border border-emerald-100 animate-fade-in">
+                            <svg className="w-4 h-4 shrink-0 text-emerald-600" fill="none" strokeWidth="2" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                            </svg>
+                            {keySuccess}
+                          </div>
+                        )}
                     </div>
                   </div>
                 )}
@@ -448,20 +501,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   </p>
                 </div>
               )}
-          {/* === Status Message === */}
-          {message && (
-            <div
-              className={`rounded-2xl px-4 py-3 text-xs font-semibold transition-all ${
-                message.type === "success"
-                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                  : message.type === "error"
-                  ? "bg-red-50 text-red-600 border border-red-200"
-                  : "bg-blue-50 text-blue-600 border border-blue-200"
-              }`}
-            >
-              {message.text}
-            </div>
-          )}
         </div>
 
         {/* Footer */}

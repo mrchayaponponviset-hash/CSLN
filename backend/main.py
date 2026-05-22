@@ -48,16 +48,17 @@ async def healthz():
 
 # --- Token Quota Management ---
 # ใช้ Supabase เป็นหลัก, in-memory เป็น fallback (รองรับ Cloud deployment ที่ filesystem ไม่ถาวร)
-DEFAULT_MAX_TOKENS = 100000  # 100k tokens limit
+DEFAULT_MAX_TOKENS = 1000000  # 1M tokens limit
 _quota_cache: dict = {}  # in-memory fallback
 
 def get_all_quotas():
     """ดึง quota ของ user ทั้งหมด — ลอง Supabase ก่อน, fallback เป็น in-memory"""
     return _quota_cache
 
-def update_user_quota(user_id: str, tokens_used: int):
+def update_user_quota(user_id: str, tokens_used: int, is_paid_model: bool = False):
     """อัปเดต quota ลง Database เสมอ เพื่อความแม่นยำ 100% สำหรับเซิร์ฟเวอร์จริง"""
     current_used = 0
+    current_paid_used = 0
     limit_tokens = DEFAULT_MAX_TOKENS
     
     # เวลาท้องถิ่นประเทศไทย (UTC+7)
@@ -66,10 +67,11 @@ def update_user_quota(user_id: str, tokens_used: int):
     
     try:
         # 1. ดึงข้อมูลล่าสุดจาก Supabase ก่อนเสมอ
-        response = supabase.table('user_quotas').select('used, limit_tokens, last_reset_date').eq('user_id', user_id).execute()
+        response = supabase.table('user_quotas').select('used, limit_tokens, last_reset_date, paid_tokens_used').eq('user_id', user_id).execute()
         if response.data:
             db_data = response.data[0]
             current_used = db_data.get("used", 0)
+            current_paid_used = db_data.get("paid_tokens_used", 0)
             limit_tokens = db_data.get("limit_tokens", DEFAULT_MAX_TOKENS)
             last_reset_date = db_data.get("last_reset_date")
             
@@ -79,23 +81,27 @@ def update_user_quota(user_id: str, tokens_used: int):
             
         # 2. บวก Token ที่ใช้ไป
         new_used = current_used + tokens_used
+        new_paid_used = current_paid_used + tokens_used if is_paid_model else current_paid_used
         
         # 3. บันทึกค่าใหม่กลับไปที่ Supabase
         supabase.table('user_quotas').upsert({
             "user_id": user_id,
             "used": new_used,
+            "paid_tokens_used": new_paid_used,
             "limit_tokens": limit_tokens,
             "last_reset_date": today_str
         }, on_conflict="user_id").execute()
         
-        user_data = {"used": new_used, "limit": limit_tokens}
+        user_data = {"used": new_used, "limit": limit_tokens, "paidTokensUsed": new_paid_used}
         _quota_cache[user_id] = user_data # อัปเดต in-memory เผื่อไว้ดึงเร็วๆ
         return user_data
     except Exception as e:
         print(f"Quota update to Supabase failed: {e}")
         # Fallback to local if DB is down
-        user_data = _quota_cache.get(user_id, {"used": 0, "limit": DEFAULT_MAX_TOKENS})
+        user_data = _quota_cache.get(user_id, {"used": 0, "limit": DEFAULT_MAX_TOKENS, "paidTokensUsed": 0})
         user_data["used"] += tokens_used
+        if is_paid_model:
+            user_data["paidTokensUsed"] = user_data.get("paidTokensUsed", 0) + tokens_used
         _quota_cache[user_id] = user_data
         return user_data
 
@@ -195,6 +201,24 @@ def TrimContext(content: str) -> str:
         trimmed = trimmed[:last_period + 1]
     return trimmed + "\n[...เนื้อหาถูกตัดย่อเพื่อประสิทธิภาพ...]"
 
+def record_llm_token_usage(user_id: str, result, messages, is_byok: bool):
+    """ท่อเดียว (Single Pipe) สำหรับบันทึกและแยกประเภท Token Usage"""
+    if not user_id:
+        return None
+        
+    tokens_used = 0
+    if hasattr(result, "response_metadata"):
+        tokens_used = result.response_metadata.get("token_usage", {}).get("total_tokens", 0)
+        
+    if tokens_used == 0:
+        input_chars = sum(len(m.content) for m in messages if hasattr(m, 'content'))
+        output_chars = len(result.content) if hasattr(result, "content") else 0
+        tokens_used = max(1, (input_chars + output_chars) // 4)
+        
+    if tokens_used > 0:
+        return update_user_quota(user_id, tokens_used, is_paid_model=not is_byok)
+    return None
+
 async def invoke_with_fallback(messages, use_model=None, user_id=None):
     """Try primary model first, fallback to secondary if it fails."""
     is_byok = False
@@ -204,7 +228,9 @@ async def invoke_with_fallback(messages, use_model=None, user_id=None):
         m = use_model or model
         
     try:
-        return await m.ainvoke(messages)
+        result = await m.ainvoke(messages)
+        record_llm_token_usage(user_id, result, messages, is_byok)
+        return result
     except Exception as e:
         error_str = str(e)
         print(f"Primary model error: {error_str[:150]}")
@@ -215,7 +241,9 @@ async def invoke_with_fallback(messages, use_model=None, user_id=None):
         # Fallback for common API errors or library internal errors (like TypeError)
         if any(err in error_str for err in ["404", "429", "503", "NoneType", "iterable"]):
             print(f"--- TRYING FALLBACK MODEL: {fallback_model_name} ---")
-            return await fallback_model.ainvoke(messages)
+            fb_result = await fallback_model.ainvoke(messages)
+            record_llm_token_usage(user_id, fb_result, messages, is_byok=False)
+            return fb_result
         raise
 
 async def InvokeGeneration(messages, user_id=None):
@@ -227,7 +255,9 @@ async def InvokeGeneration(messages, user_id=None):
         gen_m = generation_model
         
     try:
-        return await gen_m.ainvoke(messages)
+        result = await gen_m.ainvoke(messages)
+        record_llm_token_usage(user_id, result, messages, is_byok)
+        return result
     except Exception as e:
         error_str = str(e)
         if is_byok and any(err in error_str for err in ["401", "402"]):
@@ -235,7 +265,9 @@ async def InvokeGeneration(messages, user_id=None):
             
         if "429" in error_str:
             print(f"Rate limited on primary generation model. Try fallback: {fallback_model_name}")
-            return await fallback_model.ainvoke(messages)
+            fb_result = await fallback_model.ainvoke(messages)
+            record_llm_token_usage(user_id, fb_result, messages, is_byok=False)
+            return fb_result
         raise
 
 async def invoke_structured_with_fallback(messages, schema, user_id=None):
@@ -248,7 +280,11 @@ async def invoke_structured_with_fallback(messages, schema, user_id=None):
         
     try:
         structured = m.with_structured_output(schema)
-        return await structured.ainvoke(messages)
+        result = await structured.ainvoke(messages)
+        # Note: with_structured_output might not return token metadata directly depending on the model, 
+        # but we track what we can.
+        record_llm_token_usage(user_id, result, messages, is_byok)
+        return result
     except Exception as e:
         error_str = str(e)
         print(f"Structured model error: {error_str[:150]}")
@@ -259,7 +295,9 @@ async def invoke_structured_with_fallback(messages, schema, user_id=None):
         if any(err in error_str for err in ["404", "429", "503", "NoneType", "iterable"]):
             print(f"--- TRYING STRUCTURED FALLBACK: {fallback_model_name} ---")
             structured_fb = fallback_model.with_structured_output(schema)
-            return await structured_fb.ainvoke(messages)
+            fb_result = await structured_fb.ainvoke(messages)
+            record_llm_token_usage(user_id, fb_result, messages, is_byok=False)
+            return fb_result
         raise
 
 def parse_json_from_text(text: str) -> Dict[str, Any]:
@@ -550,18 +588,7 @@ async def chat(request: ChatRequest):
         # Save to Supabase
         current_user_id = request.userId or 'anonymous'
         
-        # Extract token usage and update quota
-        tokens_used = 0
-        if hasattr(last_message, "response_metadata"):
-            tokens_used = last_message.response_metadata.get("token_usage", {}).get("total_tokens", 0)
-            
-        if tokens_used == 0:
-            input_chars = sum(len(m.content) for m in lc_messages)
-            output_chars = len(last_message.content)
-            tokens_used = max(1, (input_chars + output_chars) // 4)
-        
-        if tokens_used > 0:
-            update_user_quota(current_user_id, tokens_used)
+        # (Token tracking is now handled automatically by the single pipe in invoke_with_fallback)
 
         user_msg = request.messages[-1].content
         
@@ -605,19 +632,13 @@ async def chat_stream(request: ChatRequest):
                         full_response += chunk
                         yield chunk
                 elif event["event"] == "on_chat_model_end":
-                    usage = event["data"]["output"].response_metadata.get("token_usage", {})
-                    tokens_used = usage.get("total_tokens", 0)
-                    
-                    # Fallback token estimation if provider doesn't return usage in stream
-                    if tokens_used == 0:
-                        input_chars = sum(len(m.content) for m in lc_messages)
-                        output_chars = len(full_response)
-                        tokens_used = max(1, (input_chars + output_chars) // 4)
-                        
-                    if tokens_used > 0:
-                        user_quota = update_user_quota(current_user_id, tokens_used)
-                        # ส่งข้อมูล usage ไปที่ frontend แบบเงียบๆ (ใช้ delimiter)
-                        yield f"\n__USAGE__:{json.dumps(user_quota)}"
+                    pass # Token tracking is now handled automatically by the single pipe
+            
+            # After stream finishes, the quota is updated. Send it to frontend.
+            user_quota = _quota_cache.get(current_user_id)
+            if user_quota:
+                yield f"\n__USAGE__:{json.dumps(user_quota)}"
+            
             
             # Save to Supabase after stream finished
             try:
@@ -671,33 +692,24 @@ Context:
                 try:
                     result = await InvokeGeneration([SystemMessage(content=batch_prompt)], user_id=request.userId)
                     questions = parse_json_from_text(result.content).get("questions", [])
-                    tokens_used = 0
-                    if hasattr(result, "response_metadata"):
-                        tokens_used = result.response_metadata.get("token_usage", {}).get("total_tokens", 0)
-                    if tokens_used == 0:
-                        tokens_used = max(1, (len(batch_prompt) + len(result.content)) // 4)
-                    return questions, tokens_used
+                    return questions
                 except Exception as e:
                     print(f"  [Quiz Batch {batch_num}] attempt {attempt+1} failed: {e}")
                     if attempt < 1: await asyncio.sleep(1)
-            return [], 0
+            return []
 
         # 3. รันตาม numQuestions
         if num_q == 5:
             # รัน batch เดียว (เร็วกว่า ~2x)
-            all_questions, total_tokens = await fetch_quiz_batch(1)
+            all_questions = await fetch_quiz_batch(1)
         else:
             # รัน 2 batches พร้อมกัน (Parallel)
             tasks = [fetch_quiz_batch(1), fetch_quiz_batch(2)]
             results = await asyncio.gather(*tasks)
             all_questions = []
-            total_tokens = 0
-            for batch_questions, batch_tokens in results:
+            for batch_questions in results:
                 all_questions.extend(batch_questions)
-                total_tokens += batch_tokens
-            
-        if request.userId:
-            update_user_quota(request.userId, total_tokens)
+                
             
         print(f"--- QUIZ DONE: {len(all_questions)} questions in {time.time()-start_time:.2f}s ---")
         return {"questions": all_questions}
@@ -746,22 +758,14 @@ Context:
                 try:
                     result = await InvokeGeneration([SystemMessage(content=batch_prompt)], user_id=request.userId)
                     cards = parse_json_from_text(result.content).get("cards", [])
-                    tokens_used = 0
-                    if hasattr(result, "response_metadata"):
-                        tokens_used = result.response_metadata.get("token_usage", {}).get("total_tokens", 0)
-                    if tokens_used == 0:
-                        tokens_used = max(1, (len(batch_prompt) + len(result.content)) // 4)
-                    return cards, tokens_used
+                    return cards
                 except Exception as e:
                     print(f"  [Flashcard Batch {count}] attempt {attempt+1} failed: {e}")
                     if attempt < 1: await asyncio.sleep(1)
-            return [], 0
+            return []
 
         # 3. รันแบบเดี่ยว 5 ข้อ รวดเดียวเพื่อหลีกเลี่ยง Rate Limit ของ API ฟรี
-        all_cards, total_tokens = await fetch_cards_batch(5)
-            
-        if request.userId:
-            update_user_quota(request.userId, total_tokens)
+        all_cards = await fetch_cards_batch(5)
             
         print(f"--- FLASHCARDS DONE: {len(all_cards)} cards in {time.time()-start_time:.2f}s ---")
         return {"cards": all_cards}
@@ -886,15 +890,7 @@ Context:
         result = await InvokeGeneration([SystemMessage(content=prompt)], user_id=request.userId)
         batch_data = parse_json_from_text(result.content)
         SetCache(cache_key, batch_data)
-        # Calculate actual tokens
-        tokens_used = 0
-        if hasattr(result, "response_metadata"):
-            tokens_used = result.response_metadata.get("token_usage", {}).get("total_tokens", 0)
-        if tokens_used == 0:
-            tokens_used = max(1, (len(prompt) + len(result.content)) // 4)
-            
-        if request.userId:
-            update_user_quota(request.userId, tokens_used)
+        # (Token tracking is now handled automatically by the single pipe in InvokeGeneration)
             
         print(f"--- EXAM BATCH {batch_idx + 1} DONE: {len(batch_data.get('questions', []))} questions from {len(unique_chapter_names)} chapters ---")
         return batch_data
@@ -1067,6 +1063,7 @@ async def get_user_quota(userId: str):
         if response.data:
             db_data = response.data[0]
             used = db_data.get("used", 0)
+            paid_tokens_used = db_data.get("paid_tokens_used", 0)
             limit_tokens = db_data.get("limit_tokens", DEFAULT_MAX_TOKENS)
             last_reset_date = db_data.get("last_reset_date")
             
@@ -1077,13 +1074,14 @@ async def get_user_quota(userId: str):
                     supabase.table('user_quotas').upsert({
                         "user_id": userId,
                         "used": 0,
+                        "paid_tokens_used": paid_tokens_used,
                         "limit_tokens": limit_tokens,
                         "last_reset_date": today_str
                     }, on_conflict="user_id").execute()
                 except Exception as db_err:
                     print(f"Failed to reset quota in DB for {userId}: {db_err}")
                 
-            user_data = {"used": used, "limit": limit_tokens}
+            user_data = {"used": used, "limit": limit_tokens, "paidTokensUsed": paid_tokens_used}
             # Sync to in-memory cache
             _quota_cache[userId] = user_data
             return user_data
@@ -1092,7 +1090,7 @@ async def get_user_quota(userId: str):
         
     # Fallback to in-memory cache
     quotas = get_all_quotas()
-    user_data = quotas.get(userId, {"used": 0, "limit": DEFAULT_MAX_TOKENS})
+    user_data = quotas.get(userId, {"used": 0, "limit": DEFAULT_MAX_TOKENS, "paidTokensUsed": 0})
     return user_data
 
 # --- SUPABASE ROUTES ---

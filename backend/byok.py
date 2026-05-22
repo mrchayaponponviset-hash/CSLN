@@ -351,6 +351,9 @@ async def verify_openrouter_key(api_key: str) -> Dict[str, Any]:
     ทดสอบ API Key โดยยิง request ง่ายๆ ไปที่ OpenRouter
     ใช้ model ราคาถูกที่สุด เพื่อเช็คว่า key ใช้ได้
     """
+    if not api_key.isascii():
+        return {"valid": False, "message": "API Key ต้องเป็นตัวอักษรภาษาอังกฤษหรือตัวเลขเท่านั้น (ห้ามมีอักขระพิเศษหรือภาษาไทย)"}
+
     test_model = "google/gemini-2.0-flash-lite-001"  # ราคาถูกมาก
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {

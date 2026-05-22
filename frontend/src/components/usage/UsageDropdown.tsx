@@ -85,6 +85,16 @@ export function UsageDropdown({ onClose, anchorRef }: UsageDropdownProps) {
               </div>
             </>
           )}
+          
+          <div className="mt-4 pt-3 border-t border-gray-100 flex justify-between items-center text-[13px]">
+              <span className="text-gray-500 flex items-center gap-1.5 font-medium">
+                <svg className="w-4 h-4 text-amber-500" fill="none" strokeWidth="2" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Platform Token สะสม
+              </span>
+              <span className="font-bold text-gray-900">{usage.paidTokensUsed.toLocaleString()}</span>
+            </div>
         </div>
         
         {/* Footer CTA */}

@@ -321,7 +321,7 @@ export const apiService = {
       return await res.json();
     } catch (error) {
       console.error('Error in getUserQuota:', error);
-      return { used: 0, limit: 100000 };
+      return { used: 0, limit: 1000000 };
     }
   },
 
