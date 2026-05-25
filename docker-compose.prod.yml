@@ -1,0 +1,55 @@
+# =============================================================================
+# 🐳 Production Docker Compose Configuration — CSLearning Platform
+# =============================================================================
+# ใช้สำหรับเซิร์ฟเวอร์จริง (Production)
+# รันคำสั่ง: docker compose -f docker-compose.prod.yml up --build -d
+# =============================================================================
+
+services:
+  # --- Backend Service (Production) ---
+  backend:
+    image: ${BACKEND_IMAGE:-backend:latest}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./backend/.env
+    # ใน production เราจะไม่ทำ volume binding โค้ดต้นฉบับ เพื่อความปลอดภัยและประสิทธิภาพสูงสุด
+    volumes:
+      - backend-cache:/app/__pycache__
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # --- Frontend Service (Production) ---
+  frontend:
+    image: ${FRONTEND_IMAGE:-frontend:latest}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # ส่งค่า ENV สำหรับ build-time (Next.js ต้องการค่าเหล่านี้ขณะ build bundle)
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5000}
+        - NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY}
+        - NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
+        - NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID}
+        - NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}
+        - NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}
+        - NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  backend-cache:

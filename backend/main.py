@@ -125,16 +125,21 @@ generator_model_name = os.environ.get("OPENROUTER_GENERATOR_MODEL", primary_mode
 fallback_model_name = os.environ.get("OPENROUTER_FALLBACK_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
 api_key = os.environ.get("OPENROUTER_API_KEY", "")
 
+# ดึง APP_URL จาก .env สำหรับ HTTP-Referer header (OpenRouter ใช้ตรวจสอบ origin)
+_app_url = os.environ.get("APP_URL", "http://localhost:5173")
+
 print(f"Starting server with model: {primary_model_name} (fallback: {fallback_model_name})")
 print(f"Generation model: {generator_model_name}")
+print(f"App URL (HTTP-Referer): {_app_url}")
 
 def create_model(model_name: str) -> ChatOpenAI:
+    """สร้าง ChatOpenAI model instance สำหรับ chat ทั่วไป"""
     return ChatOpenAI(
         model=model_name,
         api_key=api_key,
         base_url="https://openrouter.ai/api/v1",
         default_headers={
-            "HTTP-Referer": "http://localhost:5173",
+            "HTTP-Referer": _app_url,
             "X-Title": "CSL AI Learning Dashboard",
         }
     )
@@ -146,6 +151,7 @@ fallback_model = create_model(fallback_model_name)
 # ใช้ OPENROUTER_GENERATOR_MODEL จาก .env (inclusionai/ring-2.6-1t:free — เร็วและตอบ JSON ดี)
 # max_tokens จำกัด output ให้สั้นเพื่อลดเวลาเจน, temperature ต่ำเพื่อ output ที่คงที่
 def create_generation_model(model_name: str) -> ChatOpenAI:
+    """สร้าง ChatOpenAI model instance สำหรับ Generation (เน้นความเร็ว)"""
     return ChatOpenAI(
         model=model_name,
         api_key=api_key,
@@ -153,7 +159,7 @@ def create_generation_model(model_name: str) -> ChatOpenAI:
         temperature=0.3,         # ลดจาก 0.4 เพื่อให้ output คงที่และเร็วขึ้น
         max_tokens=2000,        # เพิ่มกลับเป็น 2000 เพื่อรองรับ Quiz 10 ข้อ/Exam 5 ข้อแบบละเอียด
         default_headers={
-            "HTTP-Referer": "http://localhost:5173",
+            "HTTP-Referer": _app_url,
             "X-Title": "CSL AI Learning Dashboard",
         }
     )
@@ -995,20 +1001,65 @@ async def extract_pdf_text(file: UploadFile = File(...)):
         pdf_reader = pypdf.PdfReader(pdf_stream)
         
         extracted_text_list = []
+        
+        # กำหนดค่าเริ่มต้นเพื่อหลีกเลี่ยงข้อผิดพลาด 'possibly unbound' ใน IDE
+        Image = None
+        pytesseract = None
+        
+        # Lazy import เพื่อให้แน่ใจว่าทำงานได้แม้ในระบบที่ไม่มี Tesseract ตอนเริ่มแอพ
+        try:
+            import pytesseract
+            from PIL import Image
+            ocr_available = True
+        except ImportError:
+            ocr_available = False
+            print("WARNING: pytesseract or Pillow not installed. Image OCR will be skipped.")
+
         # สแกนทีละหน้าและสกัดคำ
         for page_num in range(len(pdf_reader.pages)):
             page = pdf_reader.pages[page_num]
-            page_text = page.extract_text()
-            if page_text:
+            
+            # 1. ดึงข้อความปกติจาก Text Layer
+            page_text = page.extract_text() or ""
+            
+            # 2. ค้นหารูปภาพในหน้าและทำ OCR
+            ocr_texts = []
+            if ocr_available and Image is not None and pytesseract is not None and hasattr(page, 'images'):
+                # pypdf 3.x+ ใช้ list/tuple, ขณะที่ PyPDF2 ใช้ dict — รองรับทั้งสองรูปแบบ
+                images_list = page.images.values() if isinstance(page.images, dict) else page.images
+                for count, image_file_object in enumerate(images_list):
+                    try:
+                        # ใช้ getattr เพื่อดึงข้อมูลไบต์และหลีกเลี่ยง AttributeError หรือ Type Check Error
+                        image_data = getattr(image_file_object, 'data', None)
+                        if not image_data:
+                            continue
+                            
+                        img = Image.open(io.BytesIO(image_data))
+                        # แปลงภาพเป็นข้อความด้วย Tesseract
+                        ocr_text = pytesseract.image_to_string(img, lang='tha+eng')
+                        if ocr_text and ocr_text.strip():
+                            ocr_texts.append(ocr_text.strip())
+                    except Exception as e:
+                        print(f"Failed to OCR image on page {page_num}: {e}")
+                        pass
+            
+            # 3. นำข้อความมารวมกัน
+            if ocr_texts:
+                if page_text.strip():
+                    page_text += "\n\n[ข้อความที่อ่านได้จากรูปภาพในหน้านี้]:\n" + "\n---\n".join(ocr_texts)
+                else:
+                    page_text = "\n---\n".join(ocr_texts)
+                    
+            if page_text and page_text.strip():
                 extracted_text_list.append(page_text.strip())
         
-        extracted_text = "\n".join(extracted_text_list).strip()
+        extracted_text = "\n\n".join(extracted_text_list).strip()
         
         # 4. ป้องกันปัญหาสแกนไฟล์เปล่าหรือสแกนรูปภาพที่ไม่มีข้อความดิบ (เช่น PDF Scanned)
         if not extracted_text:
             raise HTTPException(
                 status_code=400, 
-                detail="ไม่พบข้อความในไฟล์ PDF นี้ (ไฟล์อาจเป็นแบบรูปภาพสแกนที่ไม่มีเลเยอร์ข้อความ หรือไฟล์ว่างเปล่า) กรุณาลองใช้ไฟล์ PDF อื่นครับ"
+                detail="ไม่พบข้อความในไฟล์ PDF นี้ (ไฟล์อาจเป็นรูปภาพสแกนที่ความละเอียดต่ำเกินไป หรือไม่มีตัวอักษรเลย) กรุณาลองใช้ไฟล์ PDF อื่นครับ"
             )
         
         # ส่งคืนข้อความที่สกัดได้

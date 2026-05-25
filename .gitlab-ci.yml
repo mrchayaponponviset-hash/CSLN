@@ -1,0 +1,113 @@
+# =============================================================================
+# 🦊 GitLab CI/CD Pipeline Configuration — CSLearning Platform
+# =============================================================================
+# ใช้สำหรับการทำ Automated Testing, Docker Build และ Deployment บนเซิร์ฟเวอร์
+# =============================================================================
+
+stages:
+  - lint
+  - build
+  - deploy
+
+variables:
+  # กำหนดชื่อ Container Image ของ backend และ frontend
+  BACKEND_IMAGE: $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_REF_SLUG
+  FRONTEND_IMAGE: $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_REF_SLUG
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+
+# ==========================================
+# 🔍 STAGE: Lint (ตรวจสอบคุณภาพโค้ด)
+# ==========================================
+lint:frontend:
+  stage: lint
+  image: node:20-alpine
+  script:
+    - cd frontend
+    - npm ci
+    - npm run lint
+  rules:
+    - changes:
+        - frontend/**/*
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# ==========================================
+# 🐳 STAGE: Build (สร้างและเก็บ Docker Images)
+# ==========================================
+build:backend:
+  stage: build
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  before_script:
+    # ล็อกอินเข้าสู่ GitLab Container Registry ของโปรเจกต์
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    # บิลด์ Backend image และ push ไปที่ Registry
+    - docker build -t $BACKEND_IMAGE ./backend
+    - docker push $BACKEND_IMAGE
+  rules:
+    - changes:
+        - backend/**/*
+    - if: $CI_COMMIT_BRANCH == "main"
+
+build:frontend:
+  stage: build
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    # บิลด์ Frontend image และส่งค่า build argument ในการคอมไพล์ bundle
+    - docker build 
+      --build-arg NEXT_PUBLIC_API_URL=$PROD_NEXT_PUBLIC_API_URL
+      --build-arg NEXT_PUBLIC_FIREBASE_API_KEY=$PROD_FIREBASE_API_KEY
+      --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$PROD_FIREBASE_AUTH_DOMAIN
+      --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID=$PROD_FIREBASE_PROJECT_ID
+      --build-arg NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=$PROD_FIREBASE_STORAGE_BUCKET
+      --build-arg NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=$PROD_FIREBASE_MESSAGING_SENDER_ID
+      --build-arg NEXT_PUBLIC_FIREBASE_APP_ID=$PROD_FIREBASE_APP_ID
+      -t $FRONTEND_IMAGE ./frontend
+    - docker push $FRONTEND_IMAGE
+  rules:
+    - changes:
+        - frontend/**/*
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# ==========================================
+# 🚀 STAGE: Deploy (อัปเดตระบบบนเซิร์ฟเวอร์จริง)
+# ==========================================
+deploy:production:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    # ติดตั้ง ssh-client และเตรียม SSH keys สำหรับล็อกอินเข้าเซิร์ฟเวอร์ปลายทาง
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H $SERVER_HOST >> ~/.ssh/known_hosts
+  script:
+    # รีโมตเข้าไปล็อกอิน Registry บนเซิร์ฟเวอร์, ดึง Docker Compose ไฟล์, และรันระบบใหม่
+    - ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST "
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY &&
+        mkdir -p ~/app &&
+        cd ~/app
+      "
+    # คัดลอกไฟล์ docker-compose.prod.yml ไปยังเซิร์ฟเวอร์
+    - scp -o StrictHostKeyChecking=no docker-compose.prod.yml $SERVER_USER@$SERVER_HOST:~/app/docker-compose.prod.yml
+    # อัปเดตและรันบริการใหม่
+    - ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST "
+        cd ~/app &&
+        export BACKEND_IMAGE=$BACKEND_IMAGE &&
+        export FRONTEND_IMAGE=$FRONTEND_IMAGE &&
+        docker compose -f docker-compose.prod.yml pull &&
+        docker compose -f docker-compose.prod.yml up -d --remove-orphans
+      "
+  environment:
+    name: production
+    url: https://$SERVER_HOST
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual  # เปิดสิทธิ์ให้กดสั่ง deploy แบบแมนนวลเพื่อความปลอดภัย (หรือเปลี่ยนเป็น on_success)

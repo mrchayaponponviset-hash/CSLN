@@ -1,14 +1,18 @@
-# Dependencies
+# =============================================================================
+# 🚫 Git Ignore — CSLearning Platform
+# =============================================================================
+
+# === Dependencies ===
 node_modules/
 backend/node_modules/
 frontend/node_modules/
 
-# Next.js
+# === Next.js ===
 .next/
 out/
 build/
 
-# Python
+# === Python ===
 __pycache__/
 *.py[cod]
 *$py.class
@@ -16,18 +20,45 @@ __pycache__/
 venv/
 ENV/
 env/
+
+# === Environment Variables (ห้าม commit โดยเด็ดขาด) ===
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+# ⚠️ .env.example สามารถ commit ได้ (ไม่มีค่าจริง)
 
-# Docker
+# === Docker ===
 .docker/
 *.log
 
-# OS
+# === OS ===
 .DS_Store
 Thumbs.db
+
+# === IDE & Editor ===
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# === AI Agent Files ===
+.gemini/
+AGENTS.md
+frontend/AGENTS.md
+
+# === Utility/Debug Scripts (ไม่ใช่ส่วนหนึ่งของ production) ===
+fix.js
+fix_css.py
+clear_all_content.py
+scratch/
+
+# === Temp/Test Files ===
+backend/quiz_result.txt
+*.tmp
+*.bak
+
+# === Build Artifacts ===
+frontend/tsconfig.tsbuildinfo
+

@@ -20,7 +20,10 @@ RUN apt-get clean && \
     libcairo2 \
     libgdk-pixbuf2.0-0 \
     shared-mime-info \
-    fonts-thai-tlwg && \
+    fonts-thai-tlwg \
+    tesseract-ocr \
+    tesseract-ocr-tha \
+    tesseract-ocr-eng && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
