@@ -4,10 +4,11 @@ import json
 import traceback
 import hashlib
 import time
+import importlib
 from datetime import datetime, timedelta, timezone
-from fastapi import FastAPI, HTTPException, Request, File, UploadFile
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Sequence
 from typing_extensions import Annotated, TypedDict
@@ -15,24 +16,21 @@ from dotenv import load_dotenv
 import operator
 import io
 import markdown
-import pypdf
 from jinja2 import Environment, FileSystemLoader
 # WeasyPrint ต้อง GTK — ใช้ lazy import ในฟังก์ชัน generate_pdf แทน
 # from weasyprint import HTML, CSS
-from fastapi.responses import Response
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from langgraph.graph import StateGraph, START, END
-import random
 import asyncio
 
-from retriever import get_retriever, get_full_syllabus, get_subject_section, search_lessons_vector
+from retriever import get_full_syllabus, get_subject_section, search_lessons_vector
 from supabase_client import supabase
 from byok import (
     verify_openrouter_key, save_user_key, get_user_byok_status,
     remove_user_key, update_user_verified, update_user_active_model,
-    get_models_for_user, resolve_api_key, resolve_model_name,
+    get_models_for_user,
     create_user_model, translate_openrouter_error, AVAILABLE_MODELS,
 )
 
@@ -312,32 +310,48 @@ async def invoke_structured_with_fallback(messages, schema, user_id=None):
         raise
 
 def parse_json_from_text(text: str) -> Dict[str, Any]:
-    """Extract and parse JSON from a string that might contain markdown blocks."""
+    """Extract JSON from model output and repair common JSON-like schema echoes."""
     if not text or not text.strip():
-        raise ValueError("AI ส่ง response ว่างเปล่ากลับมา")
-    
+        raise ValueError("AI returned an empty response")
+
     import re
+
     raw_text = text.strip()
-    
-    # พยายามดึงเฉพาะก้อน JSON ออกมา (จาก { ถึง })
-    match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-    if match:
-        raw_text = match.group(0)
-    else:
-        # ถ้าหาไม่เจอ ลองดึงแบบ array [ ถึง ]
-        match_arr = re.search(r'\[.*\]', raw_text, re.DOTALL)
-        if match_arr:
-            raw_text = match_arr.group(0)
-            
-    raw_text = raw_text.strip()
-    
-    if not raw_text:
-        raise ValueError(f"ไม่พบ JSON ใน response: {text[:200]}")
-        
+    fence_match = re.search(r"```(?:json)?\s*(.*?)\s*```", raw_text, re.DOTALL | re.IGNORECASE)
+    if fence_match:
+        raw_text = fence_match.group(1).strip()
+
+    decoder = json.JSONDecoder()
+    for start_char in ("{", "["):
+        start = raw_text.find(start_char)
+        if start == -1:
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(raw_text[start:])
+            return parsed
+        except json.JSONDecodeError:
+            pass
+
+    start_positions = [pos for pos in (raw_text.find("{"), raw_text.find("[")) if pos != -1]
+    if start_positions:
+        raw_text = raw_text[min(start_positions):]
+    end_positions = [pos for pos in (raw_text.rfind("}"), raw_text.rfind("]")) if pos != -1]
+    if end_positions:
+        raw_text = raw_text[:max(end_positions) + 1]
+
+    raw_text = re.sub(
+        r':\s*("[^"]*"\s*(?:\|\s*"[^"]*"\s*)+)',
+        lambda m: ": " + re.search(r'"[^"]*"', m.group(1)).group(0),
+        raw_text,
+    )
+    raw_text = re.sub(r":\s*number\b", ": 0", raw_text)
+    raw_text = re.sub(r":\s*boolean\b", ": false", raw_text)
+    raw_text = re.sub(r":\s*0\s*-\s*100\b", ": 0", raw_text)
+
     try:
-        return json.loads(raw_text)
+        return json.loads(raw_text.strip())
     except json.JSONDecodeError as e:
-        print(f"JSON Parse Error. Raw extracted text: {raw_text[:200]}...")
+        print(f"JSON Parse Error. Raw repaired text: {raw_text[:500]}...")
         raise e
 
 # 2. Schemas for Inputs
@@ -707,6 +721,8 @@ async def generate_flashcards(request: GenerateRequest):
         context = request.content
         if not context or len(context.strip()) < 50:
             context = await search_lessons_vector(request.chapterTitle, limit=10)
+            if not context:
+                context = await get_subject_section(request.chapterTitle)
         context = TrimContext(context)
 
         # 2. ฟังก์ชันภายในสำหรับเจนแต่ละชุด
@@ -992,6 +1008,8 @@ async def extract_pdf_text(file: UploadFile = File(...)):
     # 2. ตรวจสอบขนาดไฟล์เพื่อความปลอดภัย (จำกัด 10MB)
     max_file_size = 10 * 1024 * 1024  # 10 MB
     try:
+        import pypdf
+
         file_content = await file.read()
         if len(file_content) > max_file_size:
             raise HTTPException(status_code=400, detail="ขนาดไฟล์ PDF ต้องไม่เกิน 10MB เพื่อความรวดเร็วและปลอดภัย")
@@ -1405,16 +1423,6 @@ CRITICAL: ตอบเป็น JSON ล้วนเท่านั้น ห้
 
         # 7. แยกข้อมูล JSON จากผลลัพธ์ AI
         evaluation = parse_json_from_text(result.content)
-
-        # 8. ติดตาม Token ที่ใช้ไป
-        tokens_used = 0
-        if hasattr(result, "response_metadata"):
-            tokens_used = result.response_metadata.get("token_usage", {}).get("total_tokens", 0)
-        if tokens_used == 0:
-            tokens_used = max(1, (len(eval_prompt) + len(result.content)) // 4)
-
-        if request.userId:
-            update_user_quota(request.userId, tokens_used)
 
         elapsed = time.time() - start_time
         print(f"--- PDF EVALUATION DONE: quality_score={evaluation.get('overall', {}).get('quality_score', '?')} in {elapsed:.2f}s ---")
